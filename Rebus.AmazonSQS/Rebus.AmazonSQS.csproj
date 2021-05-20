@@ -39,7 +39,8 @@
     <DocumentationFile>bin\Release\Rebus.AmazonSQS.xml</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="awssdk.sqs" Version="3.5.1.20" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="3.7.1.9" />
+    <PackageReference Include="awssdk.sqs" Version="3.7.0.24" />
     <PackageReference Include="Rebus" Version="6.3.1" />
   </ItemGroup>
   <ItemGroup>
