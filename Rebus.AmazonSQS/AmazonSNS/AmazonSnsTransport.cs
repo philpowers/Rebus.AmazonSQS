@@ -58,7 +58,7 @@ namespace Rebus.AmazonSQS
 
             if (this.inputAwsAddress != null)
             {
-                if (this.options.CreateTopics)
+                if (this.options.CreateTopicsOptions?.CreateTopics == true)
                 {
                     this.inputAwsAddress = this.CreateSnsTopic(this.inputAwsAddress);
                 }
@@ -111,6 +111,16 @@ namespace Rebus.AmazonSQS
             this.CreateSnsTopic(AwsAddress.FromNonQualifiedName(address));
         }
 
+        public void DeleteTopic()
+        {
+            // @todo(PQP): Should we try to retrieve ARN here if we don't already have it?
+            if (this.inputAwsAddress?.AddressType != AwsAddressType.Arn) {
+                return;
+            }
+
+            AsyncHelpers.RunSync(() => this.client.DeleteTopicAsync(this.inputAwsAddress.Name));
+        }
+
         protected override Task SendOutgoingMessages(IEnumerable<OutgoingMessage> outgoingMessages, ITransactionContext context)
         {
             throw new NotImplementedException();
@@ -130,7 +140,7 @@ namespace Rebus.AmazonSQS
 
         private AwsAddress CreateSnsTopic(AwsAddress awsAddress)
         {
-            if (!this.options.CreateTopics)
+            if (this.options.CreateTopicsOptions?.CreateTopics != true)
             {
                 return awsAddress;
             }
@@ -149,6 +159,8 @@ namespace Rebus.AmazonSQS
                         // https://docs.aws.amazon.com/sdkfornet/v3/apidocs/items/SNS/TCreateTopicRequest.html
                         Attributes = new Dictionary<string, string>
                         {
+                            { "FifoTopic", this.options.CreateTopicsOptions.UseFifo.ToString() } ,
+                            { "ContentBasedDeduplication", this.options.CreateTopicsOptions.ContentBasedDeduplication.ToString() }
                         }
                     };
 
