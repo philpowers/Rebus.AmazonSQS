@@ -16,7 +16,7 @@ _ReSharper.*
 *.suo
 *.cache
 ~$*
-sqs_connectionstring.txt
+*_connectionstring.txt
 .vs
 .vs/*
 _NCrunch_*

@@ -22,13 +22,15 @@ namespace Rebus.Internals
     {
         public AwsAddressType AddressType { get; }
         public AwsServiceType ServiceType { get; }
-        public string Name { get; }
+        public string ResourceId { get; }
+        public string FullAddress { get; }
 
-        public AwsAddress(AwsAddressType addressType, AwsServiceType serviceType, string name)
+        public AwsAddress(AwsAddressType addressType, AwsServiceType serviceType, string resourceId, string fullAddress)
         {
             AddressType = addressType;
             ServiceType = serviceType;
-            Name = name;
+            ResourceId = resourceId;
+            FullAddress = fullAddress;
         }
 
         public static bool TryParse(string address, out AwsAddress awsAddress)
@@ -61,7 +63,8 @@ namespace Rebus.Internals
             return new AwsAddress(
                 AwsAddressType.Arn,
                 ParseServiceType(arn.Service),
-                arn.Resource);
+                arn.Resource,
+                arnStr);
         }
 
         public static AwsAddress FromUrl(string urlStr)
@@ -79,12 +82,13 @@ namespace Rebus.Internals
             return new AwsAddress(
                 AwsAddressType.Url,
                 ParseServiceType(hostParts[0]),
-                pathParts[pathParts.Length - 1]);
+                pathParts[pathParts.Length - 1],
+                urlStr);
         }
 
         public static AwsAddress FromNonQualifiedName(string name)
         {
-            return new AwsAddress(AwsAddressType.NonQualifiedName, AwsServiceType.Unknown, name);
+            return new AwsAddress(AwsAddressType.NonQualifiedName, AwsServiceType.Unknown, name, name);
         }
 
         public static AwsServiceType ParseServiceType(string str)

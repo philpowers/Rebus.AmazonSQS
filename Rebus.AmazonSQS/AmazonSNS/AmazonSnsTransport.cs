@@ -68,13 +68,13 @@ namespace Rebus.AmazonSQS
                 {
                     AsyncHelpers.RunSync(async () =>
                     {
-                        var arnAddress = await this.LookupArnForTopic(this.inputAwsAddress.Name);
-                        if (arnAddress == null)
+                        var topicArn = await this.LookupArnForTopicName(this.inputAwsAddress.ResourceId);
+                        if (topicArn == null)
                         {
-                            throw new InvalidOperationException($"Could not find ARN for '{this.inputAwsAddress.Name}'");
+                            throw new InvalidOperationException($"Could not find ARN for '{this.inputAwsAddress.ResourceId}'");
                         }
 
-                        this.inputAwsAddress = arnAddress;
+                        this.inputAwsAddress = AwsAddress.FromArn(topicArn);
                     });
                 }
             }
@@ -118,7 +118,16 @@ namespace Rebus.AmazonSQS
                 return;
             }
 
-            AsyncHelpers.RunSync(() => this.client.DeleteTopicAsync(this.inputAwsAddress.Name));
+            AsyncHelpers.RunSync(() => this.client.DeleteTopicAsync(this.inputAwsAddress.FullAddress));
+        }
+
+        public async Task<string> LookupArnForTopicName(string topicName)
+        {
+            // WARNING: The implementation of FindTopicAsync loops through all existing SNS topics until it finds the
+            // specified one, which could cause performance problems if there are a lot of topics associated with the
+            // current AWS account.
+            var topic = await this.client.FindTopicAsync(topicName);
+            return topic?.TopicArn;
         }
 
         protected override Task SendOutgoingMessages(IEnumerable<OutgoingMessage> outgoingMessages, ITransactionContext context)
@@ -145,7 +154,7 @@ namespace Rebus.AmazonSQS
                 return awsAddress;
             }
 
-            awsAddress = null;
+            AwsAddress awsAddressFromResponse = null;
 
             AsyncHelpers.RunSync(async () =>
             {
@@ -153,7 +162,7 @@ namespace Rebus.AmazonSQS
                 {
                     var createTopicRequest = new CreateTopicRequest
                     {
-                        Name = awsAddress.Name,
+                        Name = awsAddress.ResourceId,
 
                         // See list of possible attributes here:
                         // https://docs.aws.amazon.com/sdkfornet/v3/apidocs/items/SNS/TCreateTopicRequest.html
@@ -164,13 +173,13 @@ namespace Rebus.AmazonSQS
                         }
                     };
 
-                    var createTopicResponse = await this.client.CreateTopicAsync(awsAddress.Name);
+                    var createTopicResponse = await this.client.CreateTopicAsync(awsAddress.ResourceId);
                     if (createTopicResponse.HttpStatusCode != HttpStatusCode.OK)
                     {
-                        throw new Exception($"Could not create SNS topic '{awsAddress.Name}' - got HTTP {createTopicResponse.HttpStatusCode}");
+                        throw new Exception($"Could not create SNS topic '{awsAddress.ResourceId}' - got HTTP {createTopicResponse.HttpStatusCode}");
                     }
 
-                    awsAddress = AwsAddress.FromArn(createTopicResponse.TopicArn);
+                    awsAddressFromResponse = AwsAddress.FromArn(createTopicResponse.TopicArn);
                 }
                 catch (AmazonServiceException ex)
                 {
@@ -178,7 +187,7 @@ namespace Rebus.AmazonSQS
                 }
             });
 
-            return awsAddress;
+            return awsAddressFromResponse;
         }
 
         private static bool IsValidAddress(string address)
@@ -208,20 +217,6 @@ namespace Rebus.AmazonSQS
             return address.All(c => char.IsLetterOrDigit(c) || c == '_' || c == '-');
         }
 
-        private async Task<AwsAddress> LookupArnForTopic(string topicName)
-        {
-            // WARNING: The implementation of FindTopicAsync loops through all existing SNS topics until it finds the
-            // specified one, which could cause performance problems if there are a lot of topics associated with the
-            // current AWS account.
-            var topic = await this.client.FindTopicAsync(topicName);
-            if (topic == null)
-            {
-                return null;
-            }
-
-            return AwsAddress.FromArn(topic.TopicArn);
-        }
-
         private AwsAddress DeriveArnFromAddress(AwsAddress awsAddress)
         {
             if (awsAddress.AddressType == AwsAddressType.Arn)
@@ -237,7 +232,7 @@ namespace Rebus.AmazonSQS
             // See here for example of retrieving AWS account ID for current client: https://stackoverflow.com/a/56199669
             var accountId = "TODO";
 
-            var arn = $"arn:aws:sns:{this.client.Config.RegionEndpoint.SystemName}:{accountId}:{awsAddress.Name}";
+            var arn = $"arn:aws:sns:{this.client.Config.RegionEndpoint.SystemName}:{accountId}:{awsAddress.ResourceId}";
             return AwsAddress.FromArn(arn);
         }
     }

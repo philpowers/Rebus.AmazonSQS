@@ -11,10 +11,13 @@ namespace Rebus.AmazonSQS.Tests
 {
     public class AmazonSqsTransportFactory : AmazonTransportFactoryBase<AmazonSQSTransportOptions>
     {
+        private const string ConfigFileName = "sqs_connectionstring.txt";
+        private const string ConfigEnvironmentVariable = "rebus2_asqs_connection_string";
+
         private static ConnectionInfo _connectionInfo;
-        internal static ConnectionInfo ConnectionInfo => _connectionInfo ??= ConnectionInfoFromFileOrNull(GetFilePath("sqs_connectionstring.txt"))
-                                                                             ?? ConnectionInfoFromEnvironmentVariable("rebus2_asqs_connection_string")
-                                                                             ?? Throw("Could not find Amazon Sqs connetion Info!");
+        internal static ConnectionInfo ConnectionInfo => _connectionInfo ??= ConnectionInfoFromFileOrNull(GetFilePath(ConfigFileName))
+                                                                             ?? ConnectionInfoFromEnvironmentVariable(ConfigEnvironmentVariable)
+                                                                             ?? Throw($"Could not find Amazon SQS connection info - configure in file '{ConfigFileName}' or environment variable '{ConfigEnvironmentVariable}'");
 
         public AmazonSqsTransportFactory()
             : base(t => ((AmazonSqsTransport)t).DeleteQueue())

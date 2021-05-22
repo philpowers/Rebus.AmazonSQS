@@ -2,40 +2,36 @@ using System;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Rebus.AmazonSns.Tests;
-using Rebus.AmazonSQS.Tests.Extensions;
-using Rebus.Tests.Contracts.Extensions;
-using Rebus.Transport;
 
 namespace Rebus.AmazonSQS.Tests.AmazonSNS
 {
-    [TestFixture]
+    [TestFixture, Category(Category.AmazonSns)]
     public class AmazonSnsCreateTopics : SqsFixtureBase
     {
-        AmazonSnsTransport _transport;
-        string _inputQueueAddress;
+        private AmazonSnsTransportFactory _transportFactory;
 
         protected override void SetUp()
         {
-            _inputQueueAddress = $"queue-{DateTime.Now:yyyyMMdd-HHmmss}";
-            _transport = AmazonSnsTransportFactory.CreateTransport(_inputQueueAddress, TimeSpan.FromMinutes(1));
-            Using(_transport);
+            _transportFactory = new AmazonSnsTransportFactory();
         }
 
-        [TestCase(15)]
-        public async Task ItWorks(int messageCount)
+        protected override void TearDown()
         {
-            using (var scope = new RebusTransactionScope())
-            {
-                var context = scope.TransactionContext;
+            base.TearDown();
+            _transportFactory.CleanUp(true);
+        }
 
-                messageCount.Times(() => _transport.Send(_inputQueueAddress, MessageWith("message-1"), context).Wait());
+        [Test]
+        public async Task NonQualifiedTopicName_CreatesExpectedTopic()
+        {
+            var inputTopicName = $"snstest-topic-{DateTime.Now:yyyyMMdd-HHmmss}";
 
-                await scope.CompleteAsync();
-            }
+            var transport = (AmazonSnsTransport)_transportFactory.Create(inputTopicName, TimeSpan.FromMinutes(1));
 
-            var receivedMessages = await _transport.ReceiveAll();
+            var topicArn = await transport.LookupArnForTopicName(inputTopicName);
 
-            Assert.That(receivedMessages.Count, Is.EqualTo(messageCount));
+            Assert.True(topicArn.StartsWith("arn:aws:sns:"));
+            Assert.True(topicArn.EndsWith($":{inputTopicName}"));
         }
     }
 }

@@ -115,9 +115,6 @@ namespace Rebus.AmazonSQS.Tests
         {
             base.TearDown();
             _transportFactory.CleanUp(true);
-
-
-
         }
     }
 }
