@@ -2,13 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+
 using Amazon.Runtime;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
+
 using Rebus.Bus;
 using Rebus.Config;
+using Rebus.Exceptions;
 using Rebus.Internals;
 using Rebus.Logging;
 using Rebus.Messages;
@@ -29,6 +33,7 @@ namespace Rebus.AmazonSQS
         private bool isDisposed;
         private IAmazonSimpleNotificationService client;
         private AwsAddress inputAwsAddress;
+        private bool warnedOnArnLookup;
 
         private readonly AmazonSNSTransportOptions options;
         private readonly ILog log;
@@ -44,7 +49,7 @@ namespace Rebus.AmazonSQS
             {
                 if (!AwsAddress.TryParse(inputTopicAddress, out this.inputAwsAddress))
                 {
-                    var message = $"The input topic address '{inputTopicAddress}' is not valid - please either use a simple topic name (eg. 'my-topic') or the full ARN for the topic (e.g. 'arn:aws:sns:us-west-2:12345:my-topic').";
+                    var message = $"The input topic address '{inputTopicAddress}' is not valid - please use either the full ARN for the topic (e.g. 'arn:aws:sns:us-west-2:12345:my-topic') or a simple topic name (eg. 'my-topic').";
                     throw new ArgumentException(message, nameof(inputTopicAddress));
                 }
             }
@@ -88,7 +93,7 @@ namespace Rebus.AmazonSQS
 
         public override Task<TransportMessage> Receive(ITransactionContext context, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException("SNS does not support directly receiving messages");
         }
 
         public Task<string[]> GetSubscriberAddresses(string topic)
@@ -130,9 +135,35 @@ namespace Rebus.AmazonSQS
             return topic?.TopicArn;
         }
 
-        protected override Task SendOutgoingMessages(IEnumerable<OutgoingMessage> outgoingMessages, ITransactionContext context)
+        protected override async Task SendOutgoingMessages(IEnumerable<OutgoingMessage> outgoingMessages, ITransactionContext context)
         {
-            throw new NotImplementedException();
+            foreach (var outgoingMessage in outgoingMessages)
+            {
+                var destinationArnAddress = await this.GetArnAddress(outgoingMessage.DestinationAddress);
+                if (destinationArnAddress == null)
+                {
+                    throw new RebusApplicationException($"Could not find ARN for destination SNS topic: {outgoingMessage.DestinationAddress}");
+                }
+
+                var subject = (string)null;
+
+                if (!outgoingMessage.TransportMessage.Headers[Headers.ContentType].Contains("json"))
+                {
+                    throw new InvalidOperationException($"SNS messages must be encoded in JSON");
+                }
+
+                var messageJsonText = Encoding.UTF8.GetString(outgoingMessage.TransportMessage.Body);
+
+                var publishResponse = (subject != null)
+                    ? await this.client.PublishAsync(destinationArnAddress.FullAddress, subject, messageJsonText)
+                    : await this.client.PublishAsync(destinationArnAddress.FullAddress, messageJsonText);
+
+                if (publishResponse.HttpStatusCode != HttpStatusCode.OK)
+                {
+                    throw new RebusApplicationException(
+                        $"Publish to SNS topic '{destinationArnAddress.FullAddress}' failed. HTTP status code: {publishResponse.HttpStatusCode}; Request ID: {publishResponse.ResponseMetadata?.RequestId}");
+                }
+            }
         }
 
         protected virtual void Dispose(bool disposing)
@@ -188,6 +219,38 @@ namespace Rebus.AmazonSQS
             });
 
             return awsAddressFromResponse;
+        }
+
+        private async Task<AwsAddress> GetArnAddress(string address)
+        {
+            if (string.IsNullOrEmpty(address))
+            {
+                return null;
+            }
+
+            if (!AwsAddress.TryParse(address, out var awsAddress))
+            {
+                return null;
+            }
+
+            if (awsAddress.AddressType == AwsAddressType.Arn)
+            {
+                return awsAddress;
+            }
+
+            if (!this.warnedOnArnLookup)
+            {
+                this.warnedOnArnLookup = true;
+                this.log.Warn($"Getting ARN for topic '{address}'; for best performance, specify all SNS addresses using their ARNs");
+            }
+
+            var arnStr = await this.LookupArnForTopicName(address);
+            if (string.IsNullOrEmpty(arnStr))
+            {
+                return null;
+            }
+
+            return AwsAddress.FromArn(arnStr);
         }
 
         private static bool IsValidAddress(string address)
