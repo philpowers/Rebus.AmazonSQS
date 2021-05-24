@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Rebus.AmazonSns.Tests;
@@ -7,47 +8,63 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
     [TestFixture, Category(Category.AmazonSns)]
     public class AmazonSnsSubscriptions : SqsFixtureBase
     {
-        private AmazonSnsTransportFactory _transportFactory;
+        private AmazonSnsTransportFactory _snsTransportFactory;
+        private AmazonSqsTransportFactory _sqsTransportFactory;
 
         protected override void SetUp()
         {
-            _transportFactory = new AmazonSnsTransportFactory();
+            _snsTransportFactory = new AmazonSnsTransportFactory();
+            _sqsTransportFactory = new AmazonSqsTransportFactory();
         }
 
         protected override void TearDown()
         {
             base.TearDown();
-            _transportFactory.CleanUp(true);
+            _snsTransportFactory.CleanUp(true);
         }
 
         [Test]
-        public async Task RegisterNewSubscriptionForSqsQueueuByArn_IsSuccessful()
+        public async Task RegistrationsForSqsQueueuByArn_IsSuccessful()
         {
-            Assert.True(false, "Test not yet implemented.");
-        }
+            var snsTopicName = $"{SnsTopicPrefix}-newsub-topic-{DateTime.Now:yyyyMMdd-HHmmss}";
+            var sqsQueueName = $"{SnsTopicPrefix}-newsub-queue-{DateTime.Now:yyyyMMdd-HHmmss}";
 
-        [Test]
-        public async Task RegisterNewSubscriptionForSqsQueueuByUrl_IsSuccessful()
-        {
-            Assert.True(false, "Test not yet implemented.");
-        }
+            var snsTransport = (AmazonSnsTransport)_snsTransportFactory.Create(snsTopicName, TimeSpan.FromMinutes(1));
+            var sqsTransport = (AmazonSqsTransport)_sqsTransportFactory.Create(sqsQueueName, TimeSpan.FromMinutes(1));
 
-        [Test]
-        public async Task RegisterDuplicateSubscriptionForSqsQueue_MaintainsExistingSubscription()
-        {
-            Assert.True(false, "Test not yet implemented.");
-        }
+            var sqsQueueArn = sqsTransport.GetQueueArn(sqsTransport.Address);
 
-        [Test]
-        public async Task UnregisterSubscriptionForSqsQueue_RemovesSubscription()
-        {
-            Assert.True(false, "Test not yet implemented.");
-        }
+            //
+            // Verify that normal registrations are works
+            await snsTransport.RegisterSubscriber(snsTopicName, sqsQueueArn);
 
-        [Test]
-        public async Task UnregisterNonExistentSubscription_NoError()
-        {
-            Assert.True(false, "Test not yet implemented.");
+            var subscriptions = await snsTransport.ListSnsSubscriptions(snsTopicName);
+
+            Assert.AreEqual(1, subscriptions.Count);
+            Assert.True(subscriptions[0].Contains($":{sqsQueueName}"));
+
+            //
+            // Verify that duplicate registrations work as expected (will not create second actual subscription)
+            await snsTransport.RegisterSubscriber(snsTopicName, sqsQueueArn);
+
+            subscriptions = await snsTransport.ListSnsSubscriptions(snsTopicName);
+
+            Assert.AreEqual(1, subscriptions.Count);
+            Assert.True(subscriptions[0].Contains($":{sqsQueueName}"));
+
+            //
+            // Verify that unregistering is working correctly
+            await snsTransport.UnregisterSubscriber(snsTopicName, sqsQueueArn);
+
+            subscriptions = await snsTransport.ListSnsSubscriptions(snsTopicName);
+            Assert.IsEmpty(subscriptions);
+
+            //
+            // Verify that attempt to unregister nonexistent subscription does not cause errors
+            await snsTransport.UnregisterSubscriber(snsTopicName, sqsQueueArn);
+
+            subscriptions = await snsTransport.ListSnsSubscriptions(snsTopicName);
+            Assert.IsEmpty(subscriptions);
         }
     }
 }

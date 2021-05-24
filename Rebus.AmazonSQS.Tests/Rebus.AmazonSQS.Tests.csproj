@@ -27,6 +27,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AWSSDK.SimpleNotificationService" Version="3.7.1.9" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="5.0.0" />
     <ProjectReference Include="..\Rebus.AmazonSQS\Rebus.AmazonSQS.csproj" />
     <PackageReference Include="awssdk.sqs" Version="3.7.0.24" />
     <PackageReference Include="microsoft.net.test.sdk" Version="16.6.1" />

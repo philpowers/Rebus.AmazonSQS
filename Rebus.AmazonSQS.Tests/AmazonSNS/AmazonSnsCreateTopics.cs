@@ -24,7 +24,7 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
         [Test]
         public async Task NonQualifiedTopicName_CreatesExpectedTopic()
         {
-            var inputTopicName = $"snstest-topic-{DateTime.Now:yyyyMMdd-HHmmss}";
+            var inputTopicName = $"{SnsTopicPrefix}-nqtopic-{DateTime.Now:yyyyMMdd-HHmmss}";
 
             var transport = (AmazonSnsTransport)_transportFactory.Create(inputTopicName, TimeSpan.FromMinutes(1));
 

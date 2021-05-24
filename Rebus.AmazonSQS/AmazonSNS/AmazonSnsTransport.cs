@@ -111,7 +111,7 @@ namespace Rebus.AmazonSQS
         /// </summary>
         public async Task<string[]> GetSubscriberAddresses(string topic)
         {
-            var arnAddress = await this.GetArnAddress(topic);
+            var arnAddress = await this.GetSnsArnAddress(topic);
             if (arnAddress == null)
             {
                 throw new InvalidOperationException($"{nameof(GetSubscriberAddresses)} could not get ARN for topic '{topic}'");
@@ -122,16 +122,15 @@ namespace Rebus.AmazonSQS
 
         public async Task RegisterSubscriber(string topic, string subscriberAddress)
         {
-            var topicArnAddress = await this.GetArnAddress(topic);
+            var topicArnAddress = await this.GetSnsArnAddress(topic);
             if (topicArnAddress == null)
             {
                 throw new InvalidOperationException($"{nameof(RegisterSubscriber)} could not get ARN for topic '{topic}'");
             }
 
-            var subscriberArnAddress = await this.GetArnAddress(subscriberAddress);
-            if (subscriberArnAddress == null)
+            if (!AwsAddress.TryParse(subscriberAddress, out var subscriberArnAddress) || (subscriberArnAddress.AddressType != AwsAddressType.Arn))
             {
-                throw new InvalidOperationException($"{nameof(RegisterSubscriber)} could not parse subscriber address '{subscriberAddress}'");
+                throw new ArgumentException($"{nameof(RegisterSubscriber)} subscriber address '{subscriberAddress}' must be a valid ARN ", nameof(subscriberAddress));
             }
 
             if (subscriberArnAddress.ServiceType != AwsServiceType.Sqs)
@@ -155,13 +154,13 @@ namespace Rebus.AmazonSQS
 
         public async Task UnregisterSubscriber(string topic, string subscriberAddress)
         {
-            var topicArnAddress = await this.GetArnAddress(topic);
+            var topicArnAddress = await this.GetSnsArnAddress(topic);
             if (topicArnAddress == null)
             {
                 throw new InvalidOperationException($"{nameof(UnregisterSubscriber)} could not get ARN for topic '{topic}'");
             }
 
-            var subscriberArnAddress = await this.GetArnAddress(subscriberAddress);
+            var subscriberArnAddress = await this.GetSnsArnAddress(subscriberAddress);
             if (subscriberArnAddress == null)
             {
                 throw new InvalidOperationException($"{nameof(UnregisterSubscriber)} could not parse subscriber address '{subscriberAddress}'");
@@ -219,14 +218,14 @@ namespace Rebus.AmazonSQS
 
         public async Task<List<string>> ListSnsSubscriptions(string topicName)
         {
-            var topicArn = await this.GetArnAddress(topicName);
+            var topicArn = await this.GetSnsArnAddress(topicName);
             if (topicArn == null)
             {
                 throw new InvalidOperationException($"{nameof(RegisterSubscriber)} could not get ARN for topic '{topicName}'");
             }
 
             var snsSubscriptions = await this.ListSnsSubscriptions(topicArn);
-            return snsSubscriptions.Select(s => s.SubscriptionArn).ToList();
+            return snsSubscriptions.Select(s => s.Endpoint).ToList();
         }
 
         private async Task<List<Subscription>> ListSnsSubscriptions(AwsAddress topicAddress)
@@ -246,7 +245,7 @@ namespace Rebus.AmazonSQS
         {
             foreach (var outgoingMessage in outgoingMessages)
             {
-                var destinationArnAddress = await this.GetArnAddress(outgoingMessage.DestinationAddress);
+                var destinationArnAddress = await this.GetSnsArnAddress(outgoingMessage.DestinationAddress);
                 if (destinationArnAddress == null)
                 {
                     throw new RebusApplicationException($"Could not find ARN for destination SNS topic: {outgoingMessage.DestinationAddress}");
@@ -329,7 +328,7 @@ namespace Rebus.AmazonSQS
             return awsAddressFromResponse;
         }
 
-        private async Task<AwsAddress> GetArnAddress(string address)
+        private async Task<AwsAddress> GetSnsArnAddress(string address)
         {
             if (string.IsNullOrEmpty(address))
             {

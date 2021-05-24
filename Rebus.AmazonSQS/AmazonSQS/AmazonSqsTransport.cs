@@ -106,7 +106,7 @@ namespace Rebus.AmazonSQS
         {
             try
             {
-                return GetDestinationQueueUrlByName(Address);
+                return GetSqsQueueUrlByName(Address);
             }
             catch (Exception exception)
             {
@@ -281,7 +281,7 @@ namespace Rebus.AmazonSQS
                             .Select(GetBatchRequestEntry)
                             .ToList();
 
-                        var destinationUrl = GetDestinationQueueUrlByName(batch.Key);
+                        var destinationUrl = GetSqsQueueUrlByName(batch.Key);
 
                         foreach (var batchToSend in entries.Batch(_options.MessageBatchSize))
                         {
@@ -486,7 +486,7 @@ namespace Rebus.AmazonSQS
             return Convert.FromBase64String(bodyText);
         }
 
-        string GetDestinationQueueUrlByName(string address)
+        string GetSqsQueueUrlByName(string address)
         {
             var url = _queueUrls.GetOrAdd(address.ToLowerInvariant(), key =>
             {
@@ -531,6 +531,19 @@ namespace Rebus.AmazonSQS
         public void DeleteQueue()
         {
             AsyncHelpers.RunSync(() => _client.DeleteQueueAsync(_queueUrl));
+        }
+
+        public string GetQueueArn(string address)
+        {
+            address = GetSqsQueueUrlByName(address);
+
+            var getAttribsResponse = AsyncHelpers.GetSync(() => _client.GetQueueAttributesAsync(address, new List<string> { "QueueArn" }));
+            if (getAttribsResponse.HttpStatusCode != HttpStatusCode.OK)
+            {
+                throw new Exception($"Could not get attributes for queue '{address}' - got HTTP {getAttribsResponse.HttpStatusCode}");
+            }
+
+            return getAttribsResponse.QueueARN;
         }
 
         /// <summary>

@@ -10,6 +10,8 @@ namespace Rebus.AmazonSQS.Tests
 {
     public abstract class SqsFixtureBase : FixtureBase
     {
+        protected const string SnsTopicPrefix = "snstest";
+
         readonly Encoding _defaultEncoding = Encoding.UTF8;
 
         protected async Task WithContext(Func<ITransactionContext, Task> contextAction, bool completeTransaction = true)
