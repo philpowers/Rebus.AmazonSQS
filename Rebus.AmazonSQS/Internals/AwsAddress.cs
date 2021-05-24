@@ -33,6 +33,13 @@ namespace Rebus.Internals
             FullAddress = fullAddress;
         }
 
+        public override string ToString()
+        {
+            return !string.IsNullOrEmpty(this.FullAddress)
+                ? this.FullAddress
+                : this.ResourceId;
+        }
+
         public static bool TryParse(string address, out AwsAddress awsAddress)
         {
             if (Arn.IsArn(address))

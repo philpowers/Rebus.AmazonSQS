@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -35,6 +36,7 @@ namespace Rebus.AmazonSQS
         private AwsAddress inputAwsAddress;
         private bool warnedOnArnLookup;
 
+        private readonly ConcurrentDictionary<string, string> topicArnCache;
         private readonly AmazonSNSTransportOptions options;
         private readonly ILog log;
 
@@ -53,6 +55,8 @@ namespace Rebus.AmazonSQS
                     throw new ArgumentException(message, nameof(inputTopicAddress));
                 }
             }
+
+            this.topicArnCache = new ConcurrentDictionary<string, string>();
         }
 
         public void Initialize()
@@ -82,6 +86,9 @@ namespace Rebus.AmazonSQS
                         this.inputAwsAddress = AwsAddress.FromArn(topicArn);
                     });
                 }
+
+                // Seed the topic -> ARN cache with our own topic name
+                this.topicArnCache[this.inputAwsAddress.ResourceId] = this.inputAwsAddress.FullAddress;
             }
         }
 
@@ -93,32 +100,94 @@ namespace Rebus.AmazonSQS
 
         public override Task<TransportMessage> Receive(ITransactionContext context, CancellationToken cancellationToken)
         {
-            throw new InvalidOperationException("SNS does not support directly receiving messages");
+            throw new InvalidOperationException("SNS does not support directly receiving (pulling) messages");
         }
 
         /// <summary>
-        /// Gets "subscriber addresses" as one single magic "queue address", which will be interpreted
-        /// as a proper pub/sub topic when the time comes to send to it
+        /// Gets "subscriber addresses" as one single magic "queue address", which will be interpreted as a proper
+        /// pub/sub topic when the time comes to send to it. This is the method used by Rebus for messaging purposes.
+        /// To get the actual list of raw SNS subscriptions (eg, for testing purposes), use <see cref="ListSnsSubscriptions(string)" />
+        /// instead
         /// </summary>
         public async Task<string[]> GetSubscriberAddresses(string topic)
         {
             var arnAddress = await this.GetArnAddress(topic);
             if (arnAddress == null)
             {
-                throw new InvalidOperationException($"{nameof(GetSubscriberAddresses)} could not get ARN address for '{topic}'");
+                throw new InvalidOperationException($"{nameof(GetSubscriberAddresses)} could not get ARN for topic '{topic}'");
             }
 
             return new string[] { arnAddress.FullAddress };
         }
 
-        public Task RegisterSubscriber(string topic, string subscriberAddress)
+        public async Task RegisterSubscriber(string topic, string subscriberAddress)
         {
-            throw new NotImplementedException();
+            var topicArnAddress = await this.GetArnAddress(topic);
+            if (topicArnAddress == null)
+            {
+                throw new InvalidOperationException($"{nameof(RegisterSubscriber)} could not get ARN for topic '{topic}'");
+            }
+
+            var subscriberArnAddress = await this.GetArnAddress(subscriberAddress);
+            if (subscriberArnAddress == null)
+            {
+                throw new InvalidOperationException($"{nameof(RegisterSubscriber)} could not parse subscriber address '{subscriberAddress}'");
+            }
+
+            if (subscriberArnAddress.ServiceType != AwsServiceType.Sqs)
+            {
+                throw new InvalidOperationException($"{nameof(RegisterSubscriber)} unsupported subscriber address '{subscriberAddress}'; the SNS transport currently only supports SQS subscribers");
+            }
+
+            var subscriberResponse = await this.client.SubscribeAsync(
+                topicArnAddress.FullAddress,
+                "sqs",
+                subscriberArnAddress.FullAddress);
+
+            if (subscriberResponse.HttpStatusCode != HttpStatusCode.OK)
+            {
+                throw new RebusApplicationException(
+                    $"Subscription of SNS topic '{topicArnAddress}' to '{subscriberArnAddress}' failed. HTTP status code: {subscriberResponse.HttpStatusCode}; Request ID: {subscriberResponse.ResponseMetadata?.RequestId}");
+            }
+
+            log.Info($"SNS topic '{topicArnAddress}' subscribed to SQS queue '{subscriberArnAddress}' with subscription ARN '{subscriberResponse.SubscriptionArn}'");
         }
 
-        public Task UnregisterSubscriber(string topic, string subscriberAddress)
+        public async Task UnregisterSubscriber(string topic, string subscriberAddress)
         {
-            throw new NotImplementedException();
+            var topicArnAddress = await this.GetArnAddress(topic);
+            if (topicArnAddress == null)
+            {
+                throw new InvalidOperationException($"{nameof(UnregisterSubscriber)} could not get ARN for topic '{topic}'");
+            }
+
+            var subscriberArnAddress = await this.GetArnAddress(subscriberAddress);
+            if (subscriberArnAddress == null)
+            {
+                throw new InvalidOperationException($"{nameof(UnregisterSubscriber)} could not parse subscriber address '{subscriberAddress}'");
+            }
+
+            if (subscriberArnAddress.ServiceType != AwsServiceType.Sqs)
+            {
+                throw new InvalidOperationException($"{nameof(UnregisterSubscriber)} unsupported subscriber address '{subscriberAddress}'; the SNS transport currently only supports SQS subscribers");
+            }
+
+
+            var snsSubscriptions = await this.ListSnsSubscriptions(topicArnAddress);
+            var targetSubArn = snsSubscriptions.FirstOrDefault(s => s.Endpoint == subscriberArnAddress.FullAddress)?.SubscriptionArn;
+            if (targetSubArn == null)
+            {
+                this.log.Info($"Could not find subscription ARN for topic '{topicArnAddress}' and subscriber '{subscriberArnAddress}', ignoring.");
+                return;
+            }
+
+            var unsubscriberResponse = await this.client.UnsubscribeAsync(targetSubArn);
+
+            if (unsubscriberResponse.HttpStatusCode != HttpStatusCode.OK)
+            {
+                throw new RebusApplicationException(
+                    $"Unsubscribe of SNS topic '{topicArnAddress}' from '{subscriberArnAddress}' failed. HTTP status code: {unsubscriberResponse.HttpStatusCode}; Request ID: {unsubscriberResponse.ResponseMetadata?.RequestId}");
+            }
         }
 
         public override void CreateQueue(string address)
@@ -138,11 +207,39 @@ namespace Rebus.AmazonSQS
 
         public async Task<string> LookupArnForTopicName(string topicName)
         {
-            // WARNING: The implementation of FindTopicAsync loops through all existing SNS topics until it finds the
-            // specified one, which could cause performance problems if there are a lot of topics associated with the
-            // current AWS account.
-            var topic = await this.client.FindTopicAsync(topicName);
-            return topic?.TopicArn;
+            return this.topicArnCache.GetOrAdd(topicName, _ =>
+            {
+                // WARNING: The implementation of FindTopicAsync loops through all existing SNS topics until it finds
+                // the specified one, which could cause performance problems if there are a lot of topics associated
+                // with the current AWS account.
+                var topic = AsyncHelpers.GetSync(() => this.client.FindTopicAsync(topicName));
+                return topic?.TopicArn;
+            });
+        }
+
+        public async Task<List<string>> ListSnsSubscriptions(string topicName)
+        {
+            var topicArn = await this.GetArnAddress(topicName);
+            if (topicArn == null)
+            {
+                throw new InvalidOperationException($"{nameof(RegisterSubscriber)} could not get ARN for topic '{topicName}'");
+            }
+
+            var snsSubscriptions = await this.ListSnsSubscriptions(topicArn);
+            return snsSubscriptions.Select(s => s.SubscriptionArn).ToList();
+        }
+
+        private async Task<List<Subscription>> ListSnsSubscriptions(AwsAddress topicAddress)
+        {
+            if (topicAddress.AddressType != AwsAddressType.Arn)
+            {
+                throw new InvalidOperationException($"Topic address is in invalid format '{topicAddress.AddressType}'");
+            }
+
+            var subsPaginator = this.client.Paginators.ListSubscriptionsByTopic(
+                new ListSubscriptionsByTopicRequest(topicAddress.FullAddress));
+
+            return await subsPaginator.Subscriptions.ToListAsync();
         }
 
         protected override async Task SendOutgoingMessages(IEnumerable<OutgoingMessage> outgoingMessages, ITransactionContext context)
@@ -155,6 +252,7 @@ namespace Rebus.AmazonSQS
                     throw new RebusApplicationException($"Could not find ARN for destination SNS topic: {outgoingMessage.DestinationAddress}");
                 }
 
+                // @todo(PQP): Implement support for setting Subject through headers
                 var subject = (string)null;
 
                 if (!outgoingMessage.TransportMessage.Headers[Headers.ContentType].Contains("json"))
