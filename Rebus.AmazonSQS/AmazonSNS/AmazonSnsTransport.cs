@@ -96,9 +96,19 @@ namespace Rebus.AmazonSQS
             throw new InvalidOperationException("SNS does not support directly receiving messages");
         }
 
-        public Task<string[]> GetSubscriberAddresses(string topic)
+        /// <summary>
+        /// Gets "subscriber addresses" as one single magic "queue address", which will be interpreted
+        /// as a proper pub/sub topic when the time comes to send to it
+        /// </summary>
+        public async Task<string[]> GetSubscriberAddresses(string topic)
         {
-            throw new NotImplementedException();
+            var arnAddress = await this.GetArnAddress(topic);
+            if (arnAddress == null)
+            {
+                throw new InvalidOperationException($"{nameof(GetSubscriberAddresses)} could not get ARN address for '{topic}'");
+            }
+
+            return new string[] { arnAddress.FullAddress };
         }
 
         public Task RegisterSubscriber(string topic, string subscriberAddress)
