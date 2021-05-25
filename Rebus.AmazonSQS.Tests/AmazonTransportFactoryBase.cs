@@ -14,11 +14,11 @@ namespace Rebus.AmazonSQS.Tests
     {
         private readonly ConcurrentStack<IDisposable> _disposables = new ConcurrentStack<IDisposable>();
         private readonly Dictionary<string, ITransport> _queuesToDelete = new Dictionary<string, ITransport>();
-        private readonly Action<ITransport> fnDeleteTransport;
+        private readonly Action<ITransport> fnDeleteQueue;
 
-        protected AmazonTransportFactoryBase(Action<ITransport> fnDeleteTransport)
+        protected AmazonTransportFactoryBase(Action<ITransport> fnDeleteQueue)
         {
-            this.fnDeleteTransport = fnDeleteTransport;
+            this.fnDeleteQueue = fnDeleteQueue;
         }
 
         public ITransport Create(string inputQueueAddress, TimeSpan peeklockDuration, TTransportOptions options = null)
@@ -59,7 +59,7 @@ namespace Rebus.AmazonSQS.Tests
                 foreach (var queueAndTransport in _queuesToDelete)
                 {
                     var transport = queueAndTransport.Value;
-                    this.fnDeleteTransport(transport);
+                    this.fnDeleteQueue(transport);
                 }
             }
 
