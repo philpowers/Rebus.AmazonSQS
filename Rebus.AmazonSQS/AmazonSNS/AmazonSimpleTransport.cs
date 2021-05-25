@@ -78,7 +78,7 @@ namespace Rebus.AmazonSQS
 
                 case AwsServiceType.Sns:
                 case AwsServiceType.Unknown:
-                    return this.SqsTransport.Send(destinationAddress, message, context);
+                    return this.SnsTransport.Send(destinationAddress, message, context);
 
                 default:
                     throw new InvalidOperationException($"Unsupported service '{destAwsAddress.ServiceType}' for destination address '{destinationAddress}'");

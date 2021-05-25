@@ -36,6 +36,8 @@ namespace Rebus.AmazonSQS
         private AwsAddress inputAwsAddress;
         private bool warnedOnArnLookup;
 
+        readonly AmazonTransportMessageSerializer serializer = new AmazonTransportMessageSerializer();
+
         private readonly ConcurrentDictionary<string, string> topicArnCache;
         private readonly AmazonSNSTransportOptions options;
         private readonly ILog log;
@@ -254,16 +256,15 @@ namespace Rebus.AmazonSQS
                 // @todo(PQP): Implement support for setting Subject through headers
                 var subject = (string)null;
 
-                if (!outgoingMessage.TransportMessage.Headers[Headers.ContentType].Contains("json"))
-                {
-                    throw new InvalidOperationException($"SNS messages must be encoded in JSON");
-                }
+                var snsMessage = new AmazonTransportMessage(
+                    outgoingMessage.TransportMessage.Headers,
+                    Convert.ToBase64String(outgoingMessage.TransportMessage.Body));
 
-                var messageJsonText = Encoding.UTF8.GetString(outgoingMessage.TransportMessage.Body);
+                var messageBody = this.serializer.Serialize(snsMessage);
 
                 var publishResponse = (subject != null)
-                    ? await this.client.PublishAsync(destinationArnAddress.FullAddress, subject, messageJsonText)
-                    : await this.client.PublishAsync(destinationArnAddress.FullAddress, messageJsonText);
+                    ? await this.client.PublishAsync(destinationArnAddress.FullAddress, subject, messageBody)
+                    : await this.client.PublishAsync(destinationArnAddress.FullAddress, messageBody);
 
                 if (publishResponse.HttpStatusCode != HttpStatusCode.OK)
                 {

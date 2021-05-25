@@ -34,7 +34,7 @@ namespace Rebus.AmazonSQS
         const string MessageGroupIdHeader = "MessageGroupId";
         const string MessageDeduplicationIdHeader = "MessageDeduplicationId";
 
-        readonly AmazonSQSTransportMessageSerializer _serializer = new AmazonSQSTransportMessageSerializer();
+        readonly AmazonTransportMessageSerializer _serializer = new AmazonTransportMessageSerializer();
         readonly ConcurrentDictionary<string, string> _queueUrls = new ConcurrentDictionary<string, string>();
         readonly IAsyncTaskFactory _asyncTaskFactory;
         readonly AmazonSQSTransportOptions _options;
@@ -306,7 +306,7 @@ namespace Rebus.AmazonSQS
             var headers = transportMessage.Headers;
             var messageId = headers[Headers.MessageId];
 
-            var sqsMessage = new AmazonSQSTransportMessage(transportMessage.Headers, GetBody(transportMessage.Body));
+            var sqsMessage = new AmazonTransportMessage(transportMessage.Headers, GetBody(transportMessage.Body));
 
             var entry = new SendMessageBatchRequestEntry(messageId, _serializer.Serialize(sqsMessage));
 
