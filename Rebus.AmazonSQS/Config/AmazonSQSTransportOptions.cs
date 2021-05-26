@@ -7,13 +7,13 @@ namespace Rebus.Config
     /// <summary>
     /// Holds all of the exposed options which can be applied when using the SQS transport.
     /// </summary>
-    public class AmazonSQSTransportOptions
+    public class AmazonSQSTransportOptions : AmazonTransportOptions<IAmazonSQS>
     {
         private ushort _messageBatchSize = 10;
 
         /// <summary>
         /// Sets the WaitTimeSeconds on the ReceiveMessage. The default setting is 1, which enables long
-        /// polling for a single second. The number of seconds can be set up to 20 seconds. 
+        /// polling for a single second. The number of seconds can be set up to 20 seconds.
         /// In case no long polling is desired, then set the value to 0.
         /// </summary>
         public int ReceiveWaitTimeSeconds { get; set; }
@@ -28,13 +28,13 @@ namespace Rebus.Config
         public bool UseNativeDeferredMessages { get; set; }
 
         /// <summary>
-        /// Configures whether Rebus is in control to create queues or not. If set to false, Rebus expects that the queue's are already created. 
+        /// Configures whether Rebus is in control to create queues or not. If set to false, Rebus expects that the queue's are already created.
         /// Defaults to <code>true</code>.
         /// </summary>
         public bool CreateQueues { get; set; }
 
         /// <summary>
-        /// Sets the MessageBatchSize for sending batch messages to SQS. 
+        /// Sets the MessageBatchSize for sending batch messages to SQS.
         /// Value of BatchSize can be set up to 10.
         /// Defaults to <code>10</code>.
         /// </summary>
@@ -62,10 +62,5 @@ namespace Rebus.Config
             UseNativeDeferredMessages = true;
             CreateQueues = true;
         }
-
-        /// <summary>
-        /// Function that gets a new instance of <see cref="IAmazonSQS"/>
-        /// </summary>
-        public Func<IAmazonSQS> ClientFactory;
     }
 }

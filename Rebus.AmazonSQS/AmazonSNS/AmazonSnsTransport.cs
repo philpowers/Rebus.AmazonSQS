@@ -33,7 +33,7 @@ namespace Rebus.AmazonSQS
 
         private bool isDisposed;
         private IAmazonSimpleNotificationService client;
-        private AwsAddress inputAwsAddress;
+        private AwsAddress defaultTopicAwsAddress;
         private bool warnedOnArnLookup;
 
         readonly AmazonTransportMessageSerializer serializer = new AmazonTransportMessageSerializer();
@@ -42,19 +42,19 @@ namespace Rebus.AmazonSQS
         private readonly AmazonSNSTransportOptions options;
         private readonly ILog log;
 
-        public AmazonSnsTransport(string inputTopicAddress, AmazonSNSTransportOptions options, IRebusLoggerFactory rebusLoggerFactory) : base(inputTopicAddress)
+        public AmazonSnsTransport(string defaultTopicAddress, AmazonSNSTransportOptions options, IRebusLoggerFactory rebusLoggerFactory) : base(defaultTopicAddress)
         {
             if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
 
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.log = rebusLoggerFactory.GetLogger<AmazonSqsTransport>();
 
-            if (!string.IsNullOrEmpty(inputTopicAddress))
+            if (!string.IsNullOrEmpty(defaultTopicAddress))
             {
-                if (!AwsAddress.TryParse(inputTopicAddress, out this.inputAwsAddress))
+                if (!AwsAddress.TryParse(defaultTopicAddress, out this.defaultTopicAwsAddress))
                 {
-                    var message = $"The input topic address '{inputTopicAddress}' is not valid - please use either the full ARN for the topic (e.g. 'arn:aws:sns:us-west-2:12345:my-topic') or a simple topic name (eg. 'my-topic').";
-                    throw new ArgumentException(message, nameof(inputTopicAddress));
+                    var message = $"The default topic address '{defaultTopicAddress}' is not valid - please use either the full ARN for the topic (e.g. 'arn:aws:sns:us-west-2:12345:my-topic') or a simple topic name (eg. 'my-topic').";
+                    throw new ArgumentException(message, nameof(defaultTopicAddress));
                 }
             }
 
@@ -67,30 +67,30 @@ namespace Rebus.AmazonSQS
 
             this.client = this.options.ClientFactory();
 
-            if (this.inputAwsAddress != null)
+            if (this.defaultTopicAwsAddress != null)
             {
                 if (this.options.CreateTopicsOptions?.CreateTopics == true)
                 {
-                    this.inputAwsAddress = this.CreateSnsTopic(this.inputAwsAddress);
+                    this.defaultTopicAwsAddress = this.CreateSnsTopic(this.defaultTopicAwsAddress);
                 }
 
                 // Make sure that we've got an ARN
-                if (this.inputAwsAddress.AddressType != AwsAddressType.Arn)
+                if (this.defaultTopicAwsAddress.AddressType != AwsAddressType.Arn)
                 {
                     AsyncHelpers.RunSync(async () =>
                     {
-                        var topicArn = await this.LookupArnForTopicName(this.inputAwsAddress.ResourceId);
+                        var topicArn = await this.LookupArnForTopicName(this.defaultTopicAwsAddress.ResourceId);
                         if (topicArn == null)
                         {
-                            throw new InvalidOperationException($"Could not find ARN for '{this.inputAwsAddress.ResourceId}'");
+                            throw new InvalidOperationException($"Could not find ARN for '{this.defaultTopicAwsAddress.ResourceId}'");
                         }
 
-                        this.inputAwsAddress = AwsAddress.FromArn(topicArn);
+                        this.defaultTopicAwsAddress = AwsAddress.FromArn(topicArn);
                     });
                 }
 
                 // Seed the topic -> ARN cache with our own topic name
-                this.topicArnCache[this.inputAwsAddress.ResourceId] = this.inputAwsAddress.FullAddress;
+                this.topicArnCache[this.defaultTopicAwsAddress.ResourceId] = this.defaultTopicAwsAddress.FullAddress;
             }
         }
 
@@ -199,11 +199,11 @@ namespace Rebus.AmazonSQS
         public void DeleteTopic()
         {
             // @todo(PQP): Should we try to retrieve ARN here if we don't already have it?
-            if (this.inputAwsAddress?.AddressType != AwsAddressType.Arn) {
+            if (this.defaultTopicAwsAddress?.AddressType != AwsAddressType.Arn) {
                 return;
             }
 
-            AsyncHelpers.RunSync(() => this.client.DeleteTopicAsync(this.inputAwsAddress.FullAddress));
+            AsyncHelpers.RunSync(() => this.client.DeleteTopicAsync(this.defaultTopicAwsAddress.FullAddress));
         }
 
         public async Task<string> LookupArnForTopicName(string topicName)
