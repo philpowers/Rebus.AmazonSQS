@@ -88,6 +88,22 @@ namespace Rebus.AmazonSQS
         }
 
         /// <summary>
+        /// Public initialization method that allows for setting the queue name after the object has been created.
+        /// </summary>
+        public void Initialize(string queueAddress, bool enableAutoCreate)
+        {
+            if (enableAutoCreate)
+            {
+                this._options.CreateQueues = true;
+            }
+
+            this.Address = queueAddress;
+
+            Initialize();
+        }
+
+        /// <summary>
+        ///
         /// Initializes the transport by creating the input queue
         /// </summary>
         public void Initialize()
@@ -523,7 +539,7 @@ namespace Rebus.AmazonSQS
         /// <summary>
         /// Gets the input queue name
         /// </summary>
-        public string Address { get; }
+        public string Address { get; private set; }
 
         /// <summary>
         /// Deletes the transport's input queue

@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -42,7 +41,7 @@ namespace Rebus.AmazonSQS
         private readonly AmazonSNSTransportOptions options;
         private readonly ILog log;
 
-        public AmazonSnsTransport(string defaultTopicAddress, AmazonSNSTransportOptions options, IRebusLoggerFactory rebusLoggerFactory) : base(defaultTopicAddress)
+        public AmazonSnsTransport(string defaultTopicAddress, AmazonSNSTransportOptions options, IRebusLoggerFactory rebusLoggerFactory) : base(null)
         {
             if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
 
@@ -59,6 +58,29 @@ namespace Rebus.AmazonSQS
             }
 
             this.topicArnCache = new ConcurrentDictionary<string, string>();
+        }
+
+        public void Initialize(string defaultTopicAddress, bool enableAutoCreate)
+        {
+            if (enableAutoCreate)
+            {
+                if (this.options.CreateTopicsOptions == null)
+                {
+                    this.options.CreateTopicsOptions = new AmazonSNSCreateTopicsOptions();
+                }
+                this.options.CreateTopicsOptions.CreateTopics = true;
+            }
+
+            if (!string.IsNullOrEmpty(defaultTopicAddress))
+            {
+                if (!AwsAddress.TryParse(defaultTopicAddress, out this.defaultTopicAwsAddress))
+                {
+                    var message = $"The default topic address '{defaultTopicAddress}' is not valid - please use either the full ARN for the topic (e.g. 'arn:aws:sns:us-west-2:12345:my-topic') or a simple topic name (eg. 'my-topic').";
+                    throw new ArgumentException(message, nameof(defaultTopicAddress));
+                }
+            }
+
+            this.Initialize();
         }
 
         public void Initialize()
