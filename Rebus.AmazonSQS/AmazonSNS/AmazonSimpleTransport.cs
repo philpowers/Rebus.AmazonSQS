@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-
+using Rebus.Config;
 using Rebus.Internals;
 using Rebus.Messages;
 using Rebus.Subscriptions;
@@ -21,10 +21,15 @@ namespace Rebus.AmazonSQS
         public AmazonSnsTransport SnsTransport { get; }
         public AmazonSqsTransport SqsTransport { get; }
 
-        public AmazonSimpleTransport(AmazonSnsTransport snsTransport, AmazonSqsTransport sqsTransport)
+        private readonly string inputQueueName;
+        private readonly AmazonSimpleTransportOptions transportOptions;
+
+        public AmazonSimpleTransport(string inputQueueAddress, AmazonSnsTransport snsTransport, AmazonSqsTransport sqsTransport, AmazonSimpleTransportOptions transportOptions)
         {
+            this.inputQueueName = inputQueueAddress;
             this.SnsTransport = snsTransport;
             this.SqsTransport = sqsTransport;
+            this.transportOptions = transportOptions;
         }
 
         public void CreateQueue(string address)

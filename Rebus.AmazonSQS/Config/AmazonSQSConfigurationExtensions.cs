@@ -27,7 +27,7 @@ namespace Rebus.Config
         /// </summary>
         public static void UseAmazonSQS(this StandardConfigurer<ITransport> configurer, string inputQueueAddress, AmazonSQSTransportOptions options = null)
         {
-            Configure(configurer, inputQueueAddress, GetTransportOptions(options, null, null));
+            Configure(configurer, false, inputQueueAddress, GetTransportOptions(options, null, null));
         }
 
         /// <summary>
@@ -35,7 +35,7 @@ namespace Rebus.Config
         /// </summary>
         public static void UseAmazonSQS(this StandardConfigurer<ITransport> configurer, string inputQueueAddress, AmazonSQSConfig config, AmazonSQSTransportOptions options = null)
         {
-            Configure(configurer, inputQueueAddress, GetTransportOptions(options, null, config));
+            Configure(configurer, false, inputQueueAddress, GetTransportOptions(options, null, config));
         }
 
         /// <summary>
@@ -43,7 +43,7 @@ namespace Rebus.Config
         /// </summary>
         public static void UseAmazonSQS(this StandardConfigurer<ITransport> configurer, AWSCredentials credentials, AmazonSQSConfig config, string inputQueueAddress, AmazonSQSTransportOptions options = null)
         {
-            Configure(configurer, inputQueueAddress, GetTransportOptions(options, credentials, config));
+            Configure(configurer, false, inputQueueAddress, GetTransportOptions(options, credentials, config));
         }
 
         /// <summary>
@@ -54,7 +54,7 @@ namespace Rebus.Config
             var config = new AmazonSQSConfig { RegionEndpoint = regionEndpoint };
             var credentials = new BasicAWSCredentials(accessKeyId, secretAccessKey);
 
-            Configure(configurer, inputQueueAddress, GetTransportOptions(options, credentials, config));
+            Configure(configurer, false, inputQueueAddress, GetTransportOptions(options, credentials, config));
         }
 
         /// <summary>
@@ -64,7 +64,7 @@ namespace Rebus.Config
         {
             var credentials = new BasicAWSCredentials(accessKeyId, secretAccessKey);
 
-            Configure(configurer, inputQueueAddress, GetTransportOptions(options, credentials, config));
+            Configure(configurer, false, inputQueueAddress, GetTransportOptions(options, credentials, config));
         }
 
         /// <summary>
@@ -75,7 +75,7 @@ namespace Rebus.Config
             var credentials = new BasicAWSCredentials(accessKeyId, secretAccessKey);
             var config = new AmazonSQSConfig { RegionEndpoint = regionEndpoint };
 
-            ConfigureOneWayClient(configurer, GetTransportOptions(options, credentials, config));
+            Configure(configurer, true, null, GetTransportOptions(options, credentials, config));
         }
 
         /// <summary>
@@ -85,7 +85,7 @@ namespace Rebus.Config
         {
             var credentials = new BasicAWSCredentials(accessKeyId, secretAccessKey);
 
-            ConfigureOneWayClient(configurer, GetTransportOptions(options, credentials, amazonSqsConfig));
+            Configure(configurer, true, null, GetTransportOptions(options, credentials, amazonSqsConfig));
         }
 
         /// <summary>
@@ -93,7 +93,7 @@ namespace Rebus.Config
         /// </summary>
         public static void UseAmazonSQSAsOneWayClient(this StandardConfigurer<ITransport> configurer, AWSCredentials credentials, AmazonSQSConfig config, AmazonSQSTransportOptions options = null)
         {
-            ConfigureOneWayClient(configurer, GetTransportOptions(options, credentials, config));
+            Configure(configurer, true, null, GetTransportOptions(options, credentials, config));
         }
 
         /// <summary>
@@ -101,7 +101,7 @@ namespace Rebus.Config
         /// </summary>
         public static void UseAmazonSQSAsOneWayClient(this StandardConfigurer<ITransport> configurer, AmazonSQSConfig config, AmazonSQSTransportOptions options = null)
         {
-            ConfigureOneWayClient(configurer, GetTransportOptions(options, null, config));
+            Configure(configurer, true, null, GetTransportOptions(options, null, config));
         }
 
         /// <summary>
@@ -109,7 +109,7 @@ namespace Rebus.Config
         /// </summary>
         public static void UseAmazonSQSAsOneWayClient(this StandardConfigurer<ITransport> configurer, AmazonSQSTransportOptions options = null)
         {
-            ConfigureOneWayClient(configurer, GetTransportOptions(options, null, null));
+            Configure(configurer, true, null, GetTransportOptions(options, null, null));
         }
 
         static AmazonSQSTransportOptions GetTransportOptions(AmazonSQSTransportOptions options, AWSCredentials credentials, AmazonSQSConfig config)
@@ -133,46 +133,29 @@ namespace Rebus.Config
 
         static Func<IAmazonSQS> GetClientFactory(AWSCredentials credentials, AmazonSQSConfig config)
         {
-            IAmazonSQS CreateClientFromCredentialsAndConfig() => new AmazonSQSClient(credentials, config);
-
-            IAmazonSQS CreateClientFromCredentials() => new AmazonSQSClient(credentials);
-
-            IAmazonSQS CreateClientFromConfig() => new AmazonSQSClient(config);
-
-            IAmazonSQS CreateDefaultClient() => new AmazonSQSClient();
-
             if (credentials != null && config != null)
             {
-                return CreateClientFromCredentialsAndConfig;
+                return () => new AmazonSQSClient(credentials, config);
             }
 
             if (credentials != null)
             {
-                return CreateClientFromCredentials;
+                return () => new AmazonSQSClient(credentials);
             }
 
             if (config != null)
             {
-                return CreateClientFromConfig;
+                return () => new AmazonSQSClient(config);
             }
 
-            return CreateDefaultClient;
+            return () => new AmazonSQSClient();
         }
 
-        static void Configure(StandardConfigurer<ITransport> configurer, string inputQueueAddress, AmazonSQSTransportOptions options)
+        public static void Configure(StandardConfigurer<ITransport> configurer, bool oneWayClient, string inputQueueAddress, AmazonSQSTransportOptions options, bool regiserAsDefaultTransport = true)
         {
             if (configurer == null) throw new ArgumentNullException(nameof(configurer));
-            if (inputQueueAddress == null) throw new ArgumentNullException(nameof(inputQueueAddress));
+            if (!oneWayClient && (inputQueueAddress == null)) throw new ArgumentNullException(nameof(inputQueueAddress));
             if (options == null) throw new ArgumentNullException(nameof(options));
-
-            configurer.Register(c =>
-            {
-                var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
-                var asyncTaskFactory = c.Get<IAsyncTaskFactory>();
-                var rebusTime = c.Get<IRebusTime>();
-
-                return new AmazonSqsTransport(inputQueueAddress, rebusLoggerFactory, asyncTaskFactory, options, rebusTime);
-            });
 
             if (options.UseNativeDeferredMessages)
             {
@@ -189,38 +172,25 @@ namespace Rebus.Config
                 configurer.OtherService<ITimeoutManager>()
                     .Register(c => new DisabledTimeoutManager(), description: SqsTimeoutManagerText);
             }
-        }
 
-        static void ConfigureOneWayClient(StandardConfigurer<ITransport> configurer, AmazonSQSTransportOptions options)
-        {
-            if (configurer == null) throw new ArgumentNullException(nameof(configurer));
-            if (options == null) throw new ArgumentNullException(nameof(options));
+            configurer
+                .OtherService<AmazonSqsTransport>()
+                .Register(c =>
+                {
+                    var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
+                    var asyncTaskFactory = c.Get<IAsyncTaskFactory>();
+                    var rebusTime = c.Get<IRebusTime>();
 
-            configurer.Register(c =>
+                    return new AmazonSqsTransport(inputQueueAddress, rebusLoggerFactory, asyncTaskFactory, options, rebusTime);
+                });
+
+            if (regiserAsDefaultTransport)
             {
-                var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
-                var asyncTaskFactory = c.Get<IAsyncTaskFactory>();
-                var rebusTime = c.Get<IRebusTime>();
-
-                return new AmazonSqsTransport(null, rebusLoggerFactory, asyncTaskFactory, options, rebusTime);
-            });
-
-            OneWayClientBackdoor.ConfigureOneWayClient(configurer);
-
-            if (options.UseNativeDeferredMessages)
-            {
-                configurer
-                    .OtherService<IPipeline>()
-                    .Decorate(p =>
-                    {
-                        var pipeline = p.Get<IPipeline>();
-
-                        return new PipelineStepRemover(pipeline)
-                            .RemoveIncomingStep(s => s.GetType() == typeof(HandleDeferredMessagesStep));
-                    });
-
-                configurer.OtherService<ITimeoutManager>()
-                    .Register(c => new DisabledTimeoutManager(), description: SqsTimeoutManagerText);
+                configurer.Register(c => c.Get<AmazonSnsTransport>());
+                if (oneWayClient)
+                {
+                    OneWayClientBackdoor.ConfigureOneWayClient(configurer);
+                }
             }
         }
     }

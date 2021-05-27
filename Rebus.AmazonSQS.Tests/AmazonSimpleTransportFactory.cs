@@ -18,7 +18,7 @@ namespace Rebus.AmazonSns.Tests
             var snsTransport = AmazonSnsTransportFactory.CreateTransport(null, peeklockDuration);
             var sqsTransport = AmazonSqsTransportFactory.CreateTransport(inputQueueAddress, peeklockDuration);
 
-            return new AmazonSimpleTransport(snsTransport, sqsTransport);
+            return new AmazonSimpleTransport(inputQueueAddress, snsTransport, sqsTransport, options);
         }
 
         protected override ITransport CreateInstance(string inputQueueAddress, TimeSpan peeklockDuration, AmazonSimpleTransportOptions options)

@@ -5,6 +5,7 @@ using Amazon.SimpleNotificationService;
 using Rebus.AmazonSQS;
 using Rebus.Exceptions;
 using Rebus.Logging;
+using Rebus.Subscriptions;
 using Rebus.Threading;
 using Rebus.Time;
 using Rebus.Transport;
@@ -17,6 +18,8 @@ namespace Rebus.Config
     /// </summary>
     public static class AmazonSNSConfigurationExtensions
     {
+        private const string AmazonSnsSubText = "The AmazonSNS transport was inserted as the subscriptions storage because it has native support for pub/sub messaging";
+
         /// <summary>
         /// Configures Rebus to use Amazon Simple Queue Service as the message transport
         /// </summary>
@@ -28,10 +31,7 @@ namespace Rebus.Config
             AmazonSNSTransportOptions transportOptions = null,
             AmazonSimpleNotificationServiceConfig clientConfig = null)
         {
-            if (clientConfig == null) clientConfig = new AmazonSimpleNotificationServiceConfig();
-            if (regionEndpoint != null) clientConfig.RegionEndpoint = regionEndpoint;
-
-            Configure(configurer, defaultTopicAddress, GetTransportOptions(transportOptions, credentials, clientConfig));
+            Configure(configurer, false, defaultTopicAddress, GetTransportOptions(transportOptions, credentials, regionEndpoint, clientConfig));
         }
 
         /// <summary>
@@ -46,12 +46,8 @@ namespace Rebus.Config
             AmazonSNSTransportOptions transportOptions = null,
             AmazonSimpleNotificationServiceConfig clientConfig = null)
         {
-            if (clientConfig == null) clientConfig = new AmazonSimpleNotificationServiceConfig();
-            if (regionEndpoint != null) clientConfig.RegionEndpoint = regionEndpoint;
-
             var credentials = new BasicAWSCredentials(accessKeyId, secretAccessKey);
-
-            Configure(configurer, defaultTopicAddress, GetTransportOptions(transportOptions, credentials, clientConfig));
+            Configure(configurer, false, defaultTopicAddress, GetTransportOptions(transportOptions, credentials, regionEndpoint, clientConfig));
         }
 
         /// <summary>
@@ -61,13 +57,10 @@ namespace Rebus.Config
             this StandardConfigurer<ITransport> configurer,
             AWSCredentials credentials,
             RegionEndpoint regionEndpoint = null,
-            AmazonSNSTransportOptions options = null,
+            AmazonSNSTransportOptions transportOptions = null,
             AmazonSimpleNotificationServiceConfig clientConfig = null)
         {
-            if (clientConfig == null) clientConfig = new AmazonSimpleNotificationServiceConfig();
-            if (regionEndpoint != null) clientConfig.RegionEndpoint = regionEndpoint;
-
-            ConfigureOneWayClient(configurer, GetTransportOptions(options, credentials, clientConfig));
+            Configure(configurer, true, null, GetTransportOptions(transportOptions, credentials, regionEndpoint, clientConfig));
         }
 
         /// <summary>
@@ -81,17 +74,16 @@ namespace Rebus.Config
             AmazonSNSTransportOptions transportOptions = null,
             AmazonSimpleNotificationServiceConfig clientConfig = null)
         {
-            if (clientConfig == null) clientConfig = new AmazonSimpleNotificationServiceConfig();
-            if (regionEndpoint != null) clientConfig.RegionEndpoint = regionEndpoint;
-
             var credentials = new BasicAWSCredentials(accessKeyId, secretAccessKey);
-
-            ConfigureOneWayClient(configurer, GetTransportOptions(transportOptions, credentials, clientConfig));
+            Configure(configurer, true, null, GetTransportOptions(transportOptions, credentials, regionEndpoint, clientConfig));
         }
 
-        private static AmazonSNSTransportOptions GetTransportOptions(AmazonSNSTransportOptions options, AWSCredentials credentials, AmazonSimpleNotificationServiceConfig clientConfig)
+        private static AmazonSNSTransportOptions GetTransportOptions(AmazonSNSTransportOptions options, AWSCredentials credentials, RegionEndpoint regionEndpoint, AmazonSimpleNotificationServiceConfig clientConfig)
         {
             options = options ?? new AmazonSNSTransportOptions();
+
+            clientConfig = clientConfig ?? new AmazonSimpleNotificationServiceConfig();
+            if (regionEndpoint != null) clientConfig.RegionEndpoint = regionEndpoint;
 
             if (options.ClientFactory == null)
             {
@@ -128,37 +120,36 @@ namespace Rebus.Config
             return () => new AmazonSimpleNotificationServiceClient();
         }
 
-        private static void Configure(StandardConfigurer<ITransport> configurer, string defaultTopicAddress, AmazonSNSTransportOptions options)
+        public static void Configure(StandardConfigurer<ITransport> configurer, bool oneWayClient, string defaultTopicAddress, AmazonSNSTransportOptions options, bool registerAsDefaultTransport = true)
         {
             if (configurer == null) throw new ArgumentNullException(nameof(configurer));
-            if (defaultTopicAddress == null) throw new ArgumentNullException(nameof(defaultTopicAddress));
+            if (!oneWayClient && (defaultTopicAddress == null)) throw new ArgumentNullException(nameof(defaultTopicAddress));
             if (options == null) throw new ArgumentNullException(nameof(options));
 
-            configurer.Register(c =>
+            configurer
+                .OtherService<AmazonSnsTransport>()
+                .Register(c =>
+                {
+                    var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
+                    var asyncTaskFactory = c.Get<IAsyncTaskFactory>();
+                    var rebusTime = c.Get<IRebusTime>();
+
+                    return new AmazonSnsTransport(defaultTopicAddress, options, rebusLoggerFactory);
+                });
+
+            if (registerAsDefaultTransport)
             {
-                var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
-                var asyncTaskFactory = c.Get<IAsyncTaskFactory>();
-                var rebusTime = c.Get<IRebusTime>();
+                configurer.Register(c => c.Get<AmazonSnsTransport>());
 
-                return new AmazonSnsTransport(defaultTopicAddress, options, rebusLoggerFactory);
-            });
-        }
+                configurer
+                    .OtherService<ISubscriptionStorage>()
+                    .Register(c => c.Get<AmazonSnsTransport>(), description: AmazonSnsSubText);
 
-        private static void ConfigureOneWayClient(StandardConfigurer<ITransport> configurer, AmazonSNSTransportOptions options)
-        {
-            if (configurer == null) throw new ArgumentNullException(nameof(configurer));
-            if (options == null) throw new ArgumentNullException(nameof(options));
-
-            configurer.Register(c =>
-            {
-                var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
-                var asyncTaskFactory = c.Get<IAsyncTaskFactory>();
-                var rebusTime = c.Get<IRebusTime>();
-
-                return new AmazonSnsTransport(null, options, rebusLoggerFactory);
-            });
-
-            OneWayClientBackdoor.ConfigureOneWayClient(configurer);
+                if (oneWayClient)
+                {
+                    OneWayClientBackdoor.ConfigureOneWayClient(configurer);
+                }
+            }
         }
     }
 }
