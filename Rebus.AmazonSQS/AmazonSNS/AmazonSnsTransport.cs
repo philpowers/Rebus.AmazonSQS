@@ -162,18 +162,20 @@ namespace Rebus.AmazonSQS
                 throw new InvalidOperationException($"{nameof(RegisterSubscriber)} unsupported subscriber address '{subscriberAddress}'; the SNS transport currently only supports SQS subscribers");
             }
 
-            var subscriberResponse = await this.client.SubscribeAsync(
+            var subscriptionResponse = await this.client.SubscribeAsync(
                 topicArnAddress.FullAddress,
                 "sqs",
                 subscriberArnAddress.FullAddress);
 
-            if (subscriberResponse.HttpStatusCode != HttpStatusCode.OK)
+            if (subscriptionResponse.HttpStatusCode != HttpStatusCode.OK)
             {
                 throw new RebusApplicationException(
-                    $"Subscription of SNS topic '{topicArnAddress}' to '{subscriberArnAddress}' failed. HTTP status code: {subscriberResponse.HttpStatusCode}; Request ID: {subscriberResponse.ResponseMetadata?.RequestId}");
+                    $"Subscription of SNS topic '{topicArnAddress}' to '{subscriberArnAddress}' failed. HTTP status code: {subscriptionResponse.HttpStatusCode}; Request ID: {subscriptionResponse.ResponseMetadata?.RequestId}");
             }
 
-            log.Info($"SNS topic '{topicArnAddress}' subscribed to SQS queue '{subscriberArnAddress}' with subscription ARN '{subscriberResponse.SubscriptionArn}'");
+            await this.client.SetSubscriptionAttributesAsync(subscriptionResponse.SubscriptionArn, "RawMessageDelivery", "True");
+
+            log.Info($"SNS topic '{topicArnAddress}' subscribed to SQS queue '{subscriberArnAddress}' with subscription ARN '{subscriptionResponse.SubscriptionArn}'");
         }
 
         public async Task UnregisterSubscriber(string topic, string subscriberAddress)
