@@ -122,7 +122,7 @@ namespace Rebus.AmazonSQS
         {
             try
             {
-                return GetSqsQueueUrlByName(Address);
+                return GetQueueUrlByName(Address);
             }
             catch (Exception exception)
             {
@@ -270,6 +270,11 @@ namespace Rebus.AmazonSQS
             outgoingMessages.Enqueue(new OutgoingMessage(GetActualDestinationAddress(destinationAddress, message), message));
         }
 
+        internal IAmazonSQS GetClient()
+        {
+            return this._client;
+        }
+
         string GetActualDestinationAddress(string destinationAddress, TransportMessage message)
         {
             if (_options.UseNativeDeferredMessages && message.Headers.TryGetValue(Headers.DeferredRecipient, out var deferredRecipient))
@@ -297,7 +302,7 @@ namespace Rebus.AmazonSQS
                             .Select(GetBatchRequestEntry)
                             .ToList();
 
-                        var destinationUrl = GetSqsQueueUrlByName(batch.Key);
+                        var destinationUrl = GetQueueUrlByName(batch.Key);
 
                         foreach (var batchToSend in entries.Batch(_options.MessageBatchSize))
                         {
@@ -502,7 +507,7 @@ namespace Rebus.AmazonSQS
             return Convert.FromBase64String(bodyText);
         }
 
-        string GetSqsQueueUrlByName(string address)
+        public string GetQueueUrlByName(string address)
         {
             var url = _queueUrls.GetOrAdd(address.ToLowerInvariant(), key =>
             {
@@ -549,17 +554,17 @@ namespace Rebus.AmazonSQS
             AsyncHelpers.RunSync(() => _client.DeleteQueueAsync(_queueUrl));
         }
 
-        public string GetQueueArn(string address)
+        public (string url, string arn) GetQueueId(string name)
         {
-            address = GetSqsQueueUrlByName(address);
+            var queueUrl = GetQueueUrlByName(name);
 
-            var getAttribsResponse = AsyncHelpers.GetSync(() => _client.GetQueueAttributesAsync(address, new List<string> { "QueueArn" }));
+            var getAttribsResponse = AsyncHelpers.GetSync(() => _client.GetQueueAttributesAsync(queueUrl, new List<string> { "QueueArn" }));
             if (getAttribsResponse.HttpStatusCode != HttpStatusCode.OK)
             {
-                throw new Exception($"Could not get attributes for queue '{address}' - got HTTP {getAttribsResponse.HttpStatusCode}");
+                throw new Exception($"Could not get attributes for queue '{name}' - got HTTP {getAttribsResponse.HttpStatusCode}");
             }
 
-            return getAttribsResponse.QueueARN;
+            return (queueUrl, getAttribsResponse.QueueARN);
         }
 
         /// <summary>

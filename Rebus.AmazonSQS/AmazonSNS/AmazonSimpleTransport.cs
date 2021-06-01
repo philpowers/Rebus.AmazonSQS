@@ -1,9 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Amazon.Auth.AccessControlPolicy;
+using Amazon.Auth.AccessControlPolicy.ActionIdentifiers;
+using Amazon.SQS;
 using Rebus.Bus;
 using Rebus.Config;
 using Rebus.Internals;
+using Rebus.Logging;
 using Rebus.Messages;
 using Rebus.Subscriptions;
 using Rebus.Transport;
@@ -26,13 +31,16 @@ namespace Rebus.AmazonSQS
         private readonly AmazonSnsTransport snsTransport;
         private readonly AmazonSqsTransport sqsTransport;
         private readonly AmazonSimpleTransportOptions transportOptions;
+        private readonly ILog log;
 
-        public AmazonSimpleTransport(string inputQueueAddress, AmazonSnsTransport snsTransport, AmazonSqsTransport sqsTransport, AmazonSimpleTransportOptions transportOptions)
+        public AmazonSimpleTransport(string inputQueueAddress, AmazonSnsTransport snsTransport, AmazonSqsTransport sqsTransport, AmazonSimpleTransportOptions transportOptions, IRebusLoggerFactory rebusLoggerFactory)
         {
             this.inputQueueName = inputQueueAddress;
             this.snsTransport = snsTransport;
             this.sqsTransport = sqsTransport;
             this.transportOptions = transportOptions;
+
+            this.log = rebusLoggerFactory.GetLogger<AmazonSimpleTransport>();
         }
 
         public void Initialize()
@@ -51,6 +59,11 @@ namespace Rebus.AmazonSQS
                 var queueArnAddress = AsyncHelpers.GetSync(() => this.GetSqsArnAddress(queueAddress));
 
                 AsyncHelpers.RunSync(() => this.snsTransport.RegisterSubscriber(topicName, queueArnAddress.FullAddress));
+            }
+
+            if (this.snsTransport.DefaultTopicAwsAddress != null)
+            {
+                AsyncHelpers.RunSync(() => this.ValidateSubscriptionAccessPolicies(this.snsTransport.DefaultTopicAwsAddress));
             }
         }
 
@@ -123,6 +136,132 @@ namespace Rebus.AmazonSQS
             }
         }
 
+        private async Task ValidateSubscriptionAccessPolicies(AwsAddress snsTopicAddress)
+        {
+            // Validates that all SQS queues that have subscriptions to the specified SNS topic have their Access
+            // Policies configured so that messages published from SNS have permissions to the queue.
+            // If these access policies are not configured correctly, published messages will be SILENTLY DROPPED
+            var snsSubscriptions = await this.snsTransport.ListSnsSubscriptions(snsTopicAddress);
+
+            foreach (var subscription in snsSubscriptions)
+            {
+                if (subscription.Protocol != "sqs")
+                {
+                    continue;
+                }
+
+                if (!AwsAddress.TryParse(subscription.Endpoint, out var sqsQueueAddress))
+                {
+                    // NOTE: Maybe this should be considered an internal error and throw an exception due to the
+                    // possibility of silently dropped messages
+                    this.log.Warn($"Could not get address for SQS endpoint '{subscription.Endpoint}', skipping Access Policy check.");
+                    continue;
+                }
+
+                await this.ValidateQueueAccessPolicy(sqsQueueAddress, snsTopicAddress);
+            }
+        }
+
+        private async Task<bool> ValidateQueueAccessPolicy(AwsAddress sqsQueueAddress, AwsAddress snsTopicAddress)
+        {
+            var sqsClient = this.sqsTransport.GetClient();
+            if (sqsClient == null)
+            {
+                throw new InvalidOperationException("Could not retrieve SQS client to validate access policy!");
+            }
+
+            var sqsId = this.GetFullSqsId(sqsQueueAddress);
+            var snsArnAddress = await this.snsTransport.GetSnsArnAddress(snsTopicAddress.ResourceId);
+
+            var attributes = await sqsClient.GetAttributesAsync(sqsId.Url);
+
+            var statement = new Statement(Statement.StatementEffect.Allow)
+                .WithPrincipals(new Principal(Principal.SERVICE_PROVIDER, "sns.amazonaws.com"))
+                .WithActionIdentifiers(SQSActionIdentifiers.SendMessage)
+                .WithResources(new Resource(sqsId.Arn))
+                .WithConditions(ConditionFactory.NewSourceArnCondition(snsArnAddress.FullAddress));
+
+            Policy sqsPolicy;
+
+            var setPolicy = false;
+
+            var policyKey = "Policy";
+            if (attributes.ContainsKey(policyKey))
+            {
+                this.log.Debug($"Updating SQS Access Policy of '{sqsQueueAddress.FullAddress}' to allow topic '{snsTopicAddress.FullAddress}'");
+
+                var policyString = attributes[policyKey];
+
+                attributes = new Dictionary<string, string>();
+
+                sqsPolicy = Policy.FromJson(policyString);
+                if (!sqsPolicy.CheckIfStatementExists(statement))
+                {
+                    attributes = new Dictionary<string, string> { { policyKey, sqsPolicy.WithStatements(statement).ToJson() } };
+                    setPolicy = true;
+                }
+            }
+            else
+            {
+                this.log.Debug($"Creating SQS Access Policy on '{sqsQueueAddress.FullAddress}' to allow topic '{snsTopicAddress.FullAddress}'");
+
+                attributes = new Dictionary<string, string>();
+                sqsPolicy = new Policy().WithStatements(statement);
+                attributes.Add(policyKey, sqsPolicy.ToJson());
+                setPolicy = true;
+            }
+
+            if (setPolicy)
+            {
+                await sqsClient.SetAttributesAsync(sqsId.Url, attributes);
+            }
+
+            return true;
+        }
+
+        private SqsQueueIdentification GetFullSqsId(AwsAddress sqsQueueAddress)
+        {
+            string arn = null;
+            string url = null;
+
+            string name;
+            switch (sqsQueueAddress.AddressType)
+            {
+                case AwsAddressType.NonQualifiedName:
+                    name = sqsQueueAddress.ResourceId;
+                    break;
+                case AwsAddressType.Arn:
+                    name = sqsQueueAddress.ResourceId;
+                    arn = sqsQueueAddress.FullAddress;
+                    break;
+                case AwsAddressType.Url:
+                    name = sqsQueueAddress.ResourceId;
+                    url = sqsQueueAddress.FullAddress;
+                    break;
+
+                default:
+                    throw new InvalidOperationException($"Unhandled address type '{sqsQueueAddress.AddressType}' for SQS queue address");
+            }
+
+            if (arn == null && url == null)
+            {
+                (url, arn) = this.sqsTransport.GetQueueId(name);
+            }
+
+            if (arn == null)
+            {
+                (_, arn) = this.sqsTransport.GetQueueId(name);
+            }
+
+            if (url == null)
+            {
+                url = this.sqsTransport.GetQueueUrlByName(name);
+            }
+
+            return new SqsQueueIdentification(name, arn, url);
+
+        }
+
         private string GetNativeQueueAddress(string address)
         {
             if (string.IsNullOrEmpty(address))
@@ -163,11 +302,27 @@ namespace Rebus.AmazonSQS
                 return null;
             }
 
-            var sqsArn = (awsAddress.AddressType == AwsAddressType.Arn)
-                ? awsAddress
-                : AwsAddress.FromArn(this.sqsTransport.GetQueueArn(address));
+            if (awsAddress.AddressType == AwsAddressType.Arn)
+            {
+                return Task.FromResult(awsAddress);
+            }
 
-            return Task.FromResult(sqsArn);
+            var (_, arn) = this.sqsTransport.GetQueueId(address);
+            return Task.FromResult(AwsAddress.FromArn(arn));
+        }
+    }
+
+    public class SqsQueueIdentification
+    {
+        public string Name { get; }
+        public string Arn { get; }
+        public string Url { get; }
+
+        public SqsQueueIdentification(string name, string arn, string url)
+        {
+            this.Name = name;
+            this.Arn = arn;
+            this.Url = url;
         }
     }
 }

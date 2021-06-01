@@ -32,7 +32,7 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
             var snsTransport = (AmazonSnsTransport)_snsTransportFactory.Create(snsTopicName, TimeSpan.FromMinutes(1));
             var sqsTransport = (AmazonSqsTransport)_sqsTransportFactory.Create(sqsQueueName, TimeSpan.FromMinutes(1));
 
-            var sqsQueueArn = sqsTransport.GetQueueArn(sqsTransport.Address);
+            var (_, sqsQueueArn) = sqsTransport.GetQueueId(sqsTransport.Address);
 
             //
             // Verify that normal registrations are works
@@ -41,7 +41,7 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
             var subscriptions = await snsTransport.ListSnsSubscriptions(snsTopicName);
 
             Assert.AreEqual(1, subscriptions.Count);
-            Assert.True(subscriptions[0].Contains($":{sqsQueueName}"));
+            Assert.True(subscriptions[0].TopicArn.Contains($":{sqsQueueName}"));
 
             //
             // Verify that duplicate registrations work as expected (will not create second actual subscription)
@@ -50,7 +50,7 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
             subscriptions = await snsTransport.ListSnsSubscriptions(snsTopicName);
 
             Assert.AreEqual(1, subscriptions.Count);
-            Assert.True(subscriptions[0].Contains($":{sqsQueueName}"));
+            Assert.True(subscriptions[0].TopicArn.Contains($":{sqsQueueName}"));
 
             //
             // Verify that unregistering is working correctly

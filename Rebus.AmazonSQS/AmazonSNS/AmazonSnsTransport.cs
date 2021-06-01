@@ -30,9 +30,10 @@ namespace Rebus.AmazonSQS
 
         public bool IsCentralized => true;
 
+        internal AwsAddress DefaultTopicAwsAddress { get; private set; }
+
         private bool isDisposed;
         private IAmazonSimpleNotificationService client;
-        private AwsAddress defaultTopicAwsAddress;
         private bool warnedOnArnLookup;
 
         readonly AmazonTransportMessageSerializer serializer = new AmazonTransportMessageSerializer();
@@ -50,11 +51,13 @@ namespace Rebus.AmazonSQS
 
             if (!string.IsNullOrEmpty(defaultTopicAddress))
             {
-                if (!AwsAddress.TryParse(defaultTopicAddress, out this.defaultTopicAwsAddress))
+                if (!AwsAddress.TryParse(defaultTopicAddress, out var defaultTopicAwsAddress))
                 {
                     var message = $"The default topic address '{defaultTopicAddress}' is not valid - please use either the full ARN for the topic (e.g. 'arn:aws:sns:us-west-2:12345:my-topic') or a simple topic name (eg. 'my-topic').";
                     throw new ArgumentException(message, nameof(defaultTopicAddress));
                 }
+
+                this.DefaultTopicAwsAddress = defaultTopicAwsAddress;
             }
 
             this.topicArnCache = new ConcurrentDictionary<string, string>();
@@ -73,11 +76,13 @@ namespace Rebus.AmazonSQS
 
             if (!string.IsNullOrEmpty(defaultTopicAddress))
             {
-                if (!AwsAddress.TryParse(defaultTopicAddress, out this.defaultTopicAwsAddress))
+                if (!AwsAddress.TryParse(defaultTopicAddress, out var defaultTopicAwsAddress))
                 {
                     var message = $"The default topic address '{defaultTopicAddress}' is not valid - please use either the full ARN for the topic (e.g. 'arn:aws:sns:us-west-2:12345:my-topic') or a simple topic name (eg. 'my-topic').";
                     throw new ArgumentException(message, nameof(defaultTopicAddress));
                 }
+
+                this.DefaultTopicAwsAddress = defaultTopicAwsAddress;
             }
 
             this.Initialize();
@@ -89,30 +94,30 @@ namespace Rebus.AmazonSQS
 
             this.client = this.options.ClientFactory();
 
-            if (this.defaultTopicAwsAddress != null)
+            if (this.DefaultTopicAwsAddress != null)
             {
                 if (this.options.CreateTopicsOptions?.CreateTopics == true)
                 {
-                    this.defaultTopicAwsAddress = this.CreateSnsTopic(this.defaultTopicAwsAddress);
+                    this.DefaultTopicAwsAddress = this.CreateSnsTopic(this.DefaultTopicAwsAddress);
                 }
 
                 // Make sure that we've got an ARN
-                if (this.defaultTopicAwsAddress.AddressType != AwsAddressType.Arn)
+                if (this.DefaultTopicAwsAddress.AddressType != AwsAddressType.Arn)
                 {
                     AsyncHelpers.RunSync(async () =>
                     {
-                        var topicArn = await this.LookupArnForTopicName(this.defaultTopicAwsAddress.ResourceId);
+                        var topicArn = await this.LookupArnForTopicName(this.DefaultTopicAwsAddress.ResourceId);
                         if (topicArn == null)
                         {
-                            throw new InvalidOperationException($"Could not find ARN for '{this.defaultTopicAwsAddress.ResourceId}'");
+                            throw new InvalidOperationException($"Could not find ARN for '{this.DefaultTopicAwsAddress.ResourceId}'");
                         }
 
-                        this.defaultTopicAwsAddress = AwsAddress.FromArn(topicArn);
+                        this.DefaultTopicAwsAddress = AwsAddress.FromArn(topicArn);
                     });
                 }
 
                 // Seed the topic -> ARN cache with our own topic name
-                this.topicArnCache[this.defaultTopicAwsAddress.ResourceId] = this.defaultTopicAwsAddress.FullAddress;
+                this.topicArnCache[this.DefaultTopicAwsAddress.ResourceId] = this.DefaultTopicAwsAddress.FullAddress;
             }
         }
 
@@ -223,11 +228,11 @@ namespace Rebus.AmazonSQS
         public void DeleteTopic()
         {
             // @todo(PQP): Should we try to retrieve ARN here if we don't already have it?
-            if (this.defaultTopicAwsAddress?.AddressType != AwsAddressType.Arn) {
+            if (this.DefaultTopicAwsAddress?.AddressType != AwsAddressType.Arn) {
                 return;
             }
 
-            AsyncHelpers.RunSync(() => this.client.DeleteTopicAsync(this.defaultTopicAwsAddress.FullAddress));
+            AsyncHelpers.RunSync(() => this.client.DeleteTopicAsync(this.DefaultTopicAwsAddress.FullAddress));
         }
 
         public async Task<string> LookupArnForTopicName(string topicName)
@@ -242,19 +247,18 @@ namespace Rebus.AmazonSQS
             });
         }
 
-        public async Task<List<string>> ListSnsSubscriptions(string topicName)
+        public async Task<List<Subscription>> ListSnsSubscriptions(string topic)
         {
-            var topicArn = await this.GetSnsArnAddress(topicName);
-            if (topicArn == null)
+            var topicAddress = await this.GetSnsArnAddress(topic);
+            if (topicAddress == null)
             {
-                throw new InvalidOperationException($"{nameof(RegisterSubscriber)} could not get ARN for topic '{topicName}'");
+                throw new InvalidOperationException($"Could not get address for topic '{topic}'");
             }
 
-            var snsSubscriptions = await this.ListSnsSubscriptions(topicArn);
-            return snsSubscriptions.Select(s => s.Endpoint).ToList();
+            return await this.ListSnsSubscriptions(topicAddress);
         }
 
-        private async Task<List<Subscription>> ListSnsSubscriptions(AwsAddress topicAddress)
+        internal async Task<List<Subscription>> ListSnsSubscriptions(AwsAddress topicAddress)
         {
             if (topicAddress.AddressType != AwsAddressType.Arn)
             {
@@ -265,6 +269,38 @@ namespace Rebus.AmazonSQS
                 new ListSubscriptionsByTopicRequest(topicAddress.FullAddress));
 
             return await subsPaginator.Subscriptions.ToListAsync();
+        }
+
+        internal async Task<AwsAddress> GetSnsArnAddress(string topic)
+        {
+            if (string.IsNullOrEmpty(topic))
+            {
+                return null;
+            }
+
+            if (!AwsAddress.TryParse(topic, out var awsAddress))
+            {
+                return null;
+            }
+
+            if (awsAddress.AddressType == AwsAddressType.Arn)
+            {
+                return awsAddress;
+            }
+
+            if (!this.warnedOnArnLookup)
+            {
+                this.warnedOnArnLookup = true;
+                this.log.Warn($"Getting ARN for topic '{topic}'; for best performance, specify all SNS addresses using their ARNs");
+            }
+
+            var arnStr = await this.LookupArnForTopicName(topic);
+            if (string.IsNullOrEmpty(arnStr))
+            {
+                return null;
+            }
+
+            return AwsAddress.FromArn(arnStr);
         }
 
         protected override async Task SendOutgoingMessages(IEnumerable<OutgoingMessage> outgoingMessages, ITransactionContext context)
@@ -351,38 +387,6 @@ namespace Rebus.AmazonSQS
             });
 
             return awsAddressFromResponse;
-        }
-
-        private async Task<AwsAddress> GetSnsArnAddress(string address)
-        {
-            if (string.IsNullOrEmpty(address))
-            {
-                return null;
-            }
-
-            if (!AwsAddress.TryParse(address, out var awsAddress))
-            {
-                return null;
-            }
-
-            if (awsAddress.AddressType == AwsAddressType.Arn)
-            {
-                return awsAddress;
-            }
-
-            if (!this.warnedOnArnLookup)
-            {
-                this.warnedOnArnLookup = true;
-                this.log.Warn($"Getting ARN for topic '{address}'; for best performance, specify all SNS addresses using their ARNs");
-            }
-
-            var arnStr = await this.LookupArnForTopicName(address);
-            if (string.IsNullOrEmpty(arnStr))
-            {
-                return null;
-            }
-
-            return AwsAddress.FromArn(arnStr);
         }
 
         private static bool IsValidAddress(string address)

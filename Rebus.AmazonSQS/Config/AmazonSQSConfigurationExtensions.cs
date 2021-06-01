@@ -186,7 +186,7 @@ namespace Rebus.Config
 
             if (regiserAsDefaultTransport)
             {
-                configurer.Register(c => c.Get<AmazonSnsTransport>());
+                configurer.Register(c => c.Get<AmazonSqsTransport>());
                 if (oneWayClient)
                 {
                     OneWayClientBackdoor.ConfigureOneWayClient(configurer);

@@ -131,14 +131,13 @@ namespace Rebus.Config
                         .Start();
 
                     var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
-                    var asyncTaskFactory = c.Get<IAsyncTaskFactory>();
-                    var rebusTime = c.Get<IRebusTime>();
 
                     return new AmazonSimpleTransport(
                         inputQueueAddress,
                         c.Get<AmazonSnsTransport>(),
                         c.Get<AmazonSqsTransport>(),
-                        transportOptions);
+                        transportOptions,
+                        rebusLoggerFactory);
                 });
 
             configurer

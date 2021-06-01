@@ -2,6 +2,7 @@
 using Rebus.AmazonSQS;
 using Rebus.AmazonSQS.Tests;
 using Rebus.Config;
+using Rebus.Logging;
 using Rebus.Transport;
 
 namespace Rebus.AmazonSns.Tests
@@ -23,7 +24,7 @@ namespace Rebus.AmazonSns.Tests
             var snsTransport = AmazonSnsTransportFactory.CreateTransport(null, peeklockDuration);
             var sqsTransport = AmazonSqsTransportFactory.CreateTransport(inputQueueAddress, peeklockDuration);
 
-            var simpleTransport = new AmazonSimpleTransport(inputQueueAddress, snsTransport, sqsTransport, options);
+            var simpleTransport = new AmazonSimpleTransport(inputQueueAddress, snsTransport, sqsTransport, options, new ConsoleLoggerFactory(false));
             simpleTransport.Initialize();
 
             return simpleTransport;
