@@ -14,15 +14,13 @@ namespace Rebus.AmazonSQS.Tests
         private const string ConfigFileName = "sqs_connectionstring.txt";
         private const string ConfigEnvironmentVariable = "rebus2_asqs_connection_string";
 
-        private const string SqsQueuePrefix = "sqstest";
-
         private static ConnectionInfo _connectionInfo;
         internal static ConnectionInfo ConnectionInfo => _connectionInfo ??= ConnectionInfoFromFileOrNull(GetFilePath(ConfigFileName))
                                                                              ?? ConnectionInfoFromEnvironmentVariable(ConfigEnvironmentVariable)
                                                                              ?? Throw($"Could not find Amazon SQS connection info - configure in file '{ConfigFileName}' or environment variable '{ConfigEnvironmentVariable}'");
 
         public AmazonSqsTransportFactory()
-            : base(t => ((AmazonSqsTransport)t).DeleteQueue(), SqsQueuePrefix)
+            : base(t => ((AmazonSqsTransport)t).DeleteQueue())
         {
         }
 

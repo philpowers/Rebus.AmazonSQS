@@ -101,7 +101,12 @@ namespace Rebus.Config
             return servicesConfig;
         }
 
-        private static void Configure(StandardConfigurer<ITransport> configurer, string inputQueueAddress, AWSCredentials credentials, AmazonSimpleTransportOptions transportOptions, AmazonSimpleServicesConfig servicesConfig)
+        private static void Configure(
+            StandardConfigurer<ITransport> configurer,
+            string inputQueueAddress,
+            AWSCredentials credentials,
+            AmazonSimpleTransportOptions transportOptions,
+            AmazonSimpleServicesConfig servicesConfig)
         {
             if (configurer == null) throw new ArgumentNullException(nameof(configurer));
             if (inputQueueAddress == null) throw new ArgumentNullException(nameof(inputQueueAddress));

@@ -7,10 +7,6 @@ using Rebus.Transport;
 using Rebus.Extensions;
 using Rebus.Exceptions;
 using Rebus.Tests.Contracts.Transports;
-using System.Threading.Tasks;
-using Rebus.Messages;
-using System.Threading;
-using Rebus.Subscriptions;
 
 namespace Rebus.AmazonSQS.Tests
 {
@@ -19,12 +15,10 @@ namespace Rebus.AmazonSQS.Tests
         private readonly ConcurrentStack<IDisposable> _disposables = new ConcurrentStack<IDisposable>();
         private readonly Dictionary<string, ITransport> _queuesToDelete = new Dictionary<string, ITransport>();
         private readonly Action<ITransport> fnDeleteQueue;
-        private readonly string queuePrefix;
 
-        protected AmazonTransportFactoryBase(Action<ITransport> fnDeleteQueue, string queuePrefix)
+        protected AmazonTransportFactoryBase(Action<ITransport> fnDeleteQueue)
         {
             this.fnDeleteQueue = fnDeleteQueue;
-            this.queuePrefix = $"{queuePrefix}-{Environment.TickCount}-";
         }
 
         public ITransport Create(string inputQueueAddress, TimeSpan peeklockDuration, TTransportOptions options = null)
@@ -39,7 +33,6 @@ namespace Rebus.AmazonSQS.Tests
                 }
 
                 return transport;
-                return new AmazonTransportPrefixDecorator(transport, this.queuePrefix);
             }
 
             return _queuesToDelete.GetOrAdd(inputQueueAddress, () =>
@@ -51,7 +44,6 @@ namespace Rebus.AmazonSQS.Tests
                 }
 
                 return transport;
-                return new AmazonTransportPrefixDecorator(transport, this.queuePrefix);
             });
         }
 
@@ -129,70 +121,6 @@ namespace Rebus.AmazonSQS.Tests
         protected static ConnectionInfo Throw(string message)
         {
             throw new RebusConfigurationException(message);
-        }
-    }
-
-
-    public class AmazonTransportPrefixDecorator : ITransport, ISubscriptionStorage
-    {
-        private readonly ITransport innerTransport;
-        private readonly string prefix;
-
-        public string Address => throw new NotImplementedException();
-
-        public bool IsCentralized => throw new NotImplementedException();
-
-        public AmazonTransportPrefixDecorator(ITransport innerTransport, string prefix)
-        {
-            this.innerTransport = innerTransport;
-            this.prefix = prefix;
-        }
-
-        public void CreateQueue(string address)
-        {
-            this.innerTransport.CreateQueue(this.GetPrefixedAddress(address));
-        }
-
-        public Task<TransportMessage> Receive(ITransactionContext context, CancellationToken cancellationToken)
-        {
-            return this.innerTransport.Receive(context, cancellationToken);
-        }
-
-        public Task Send(string destinationAddress, TransportMessage message, ITransactionContext context)
-        {
-            return this.innerTransport.Send(this.GetPrefixedAddress(destinationAddress), message, context);
-        }
-
-        public Task<string[]> GetSubscriberAddresses(string topic)
-        {
-            if (!(this.innerTransport is ISubscriptionStorage subscriptionStorage)) {
-                throw new InvalidOperationException("Transport does not support ISubscriptionStorage");
-            }
-
-            return subscriptionStorage.GetSubscriberAddresses(this.GetPrefixedAddress(topic));
-        }
-
-        public Task RegisterSubscriber(string topic, string subscriberAddress)
-        {
-            if (!(this.innerTransport is ISubscriptionStorage subscriptionStorage)) {
-                throw new InvalidOperationException("Transport does not support ISubscriptionStorage");
-            }
-
-            return subscriptionStorage.RegisterSubscriber(this.GetPrefixedAddress(topic), this.GetPrefixedAddress(subscriberAddress));
-        }
-
-        public Task UnregisterSubscriber(string topic, string subscriberAddress)
-        {
-            if (!(this.innerTransport is ISubscriptionStorage subscriptionStorage)) {
-                throw new InvalidOperationException("Transport does not support ISubscriptionStorage");
-            }
-
-            return subscriptionStorage.UnregisterSubscriber(this.GetPrefixedAddress(topic), this.GetPrefixedAddress(subscriberAddress));
-        }
-
-        private string GetPrefixedAddress(string address)
-        {
-            return $"{this.prefix}{address}";
         }
     }
 }
