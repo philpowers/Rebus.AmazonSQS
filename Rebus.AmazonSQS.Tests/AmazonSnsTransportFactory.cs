@@ -14,13 +14,15 @@ namespace Rebus.AmazonSns.Tests
         private const string ConfigFileName = "sns_connectionstring.txt";
         private const string ConfigEnvironmentVariable = "rebus2_asns_connection_string";
 
+        private const string SnsTopicPrefix = "snstest";
+
         private static ConnectionInfo _connectionInfo;
         internal static ConnectionInfo ConnectionInfo => _connectionInfo ??= ConnectionInfoFromFileOrNull(GetFilePath(ConfigFileName))
                                                                              ?? ConnectionInfoFromEnvironmentVariable(ConfigEnvironmentVariable)
                                                                              ?? Throw($"Could not find Amazon SNS connection info - configure in file '{ConfigFileName}' or environment variable '{ConfigEnvironmentVariable}'");
 
         public AmazonSnsTransportFactory()
-            : base(t => ((AmazonSnsTransport)t).DeleteTopic())
+            : base(t => ((AmazonSnsTransport)t).DeleteTopic(), SnsTopicPrefix)
         {
         }
 

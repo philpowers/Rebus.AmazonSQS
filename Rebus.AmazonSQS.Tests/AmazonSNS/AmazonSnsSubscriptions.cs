@@ -26,8 +26,8 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
         [Test]
         public async Task RegistrationsForSqsQueueuByArn_IsSuccessful()
         {
-            var snsTopicName = $"{SnsTopicPrefix}-newsub-topic-{DateTime.Now:yyyyMMdd-HHmmss}";
-            var sqsQueueName = $"{SnsTopicPrefix}-newsub-queue-{DateTime.Now:yyyyMMdd-HHmmss}";
+            var snsTopicName = $"newsub-topic-{DateTime.Now:yyyyMMdd-HHmmss}";
+            var sqsQueueName = $"newsub-queue-{DateTime.Now:yyyyMMdd-HHmmss}";
 
             var snsTransport = (AmazonSnsTransport)_snsTransportFactory.Create(snsTopicName, TimeSpan.FromMinutes(1));
             var sqsTransport = (AmazonSqsTransport)_sqsTransportFactory.Create(sqsQueueName, TimeSpan.FromMinutes(1));

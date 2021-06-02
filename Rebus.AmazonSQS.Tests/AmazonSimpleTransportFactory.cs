@@ -9,7 +9,9 @@ namespace Rebus.AmazonSns.Tests
 {
     public class AmazonSimpleTransportFactory : AmazonTransportFactoryBase<AmazonSimpleTransportOptions>
     {
-        public AmazonSimpleTransportFactory() : base(_ => { })
+        private const string SimpleQueuePrefix = "simpletest";
+
+        public AmazonSimpleTransportFactory() : base(_ => { }, SimpleQueuePrefix)
         {
 
         }
