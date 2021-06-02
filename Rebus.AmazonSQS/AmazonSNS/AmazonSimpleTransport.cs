@@ -21,9 +21,6 @@ namespace Rebus.AmazonSQS
     /// </summary>
     public class AmazonSimpleTransport : ITransport, ISubscriptionStorage, IInitializable
     {
-        private const string AutoAttachedTopicSuffix = "-rebustopic";
-        private const string AutoAttachedQueueSuffix = "-rebusqueue";
-
         public string Address => this.snsTransport?.Address;
         public bool IsCentralized => true;
 
@@ -48,14 +45,11 @@ namespace Rebus.AmazonSQS
             var topicName = this.GetNativeTopicName(this.inputQueueName);
             var queueAddress = this.GetNativeQueueAddress(this.inputQueueName);
 
-            this.snsTransport.Initialize(topicName, true);
-            this.sqsTransport.Initialize(queueAddress, true);
+            this.snsTransport.Initialize(topicName, this.transportOptions.AutoAttachServices);
+            this.sqsTransport.Initialize(queueAddress, this.transportOptions.AutoAttachServices);
 
             if (this.transportOptions.AutoAttachServices && !string.IsNullOrEmpty(this.inputQueueName))
             {
-                // this.snsTransport.CreateQueue(topicName);
-                // this.sqsTransport.CreateQueue(queueName);
-
                 var queueArnAddress = AsyncHelpers.GetSync(() => this.GetSqsArnAddress(queueAddress));
 
                 AsyncHelpers.RunSync(() => this.snsTransport.RegisterSubscriber(topicName, queueArnAddress.FullAddress));
@@ -269,10 +263,6 @@ namespace Rebus.AmazonSQS
                 return address;
             }
 
-            if (this.transportOptions.AutoAttachServices)
-            {
-                address += AutoAttachedQueueSuffix;
-            }
             return address;
         }
 
@@ -283,10 +273,6 @@ namespace Rebus.AmazonSQS
                 return topic;
             }
 
-            if (this.transportOptions.AutoAttachServices)
-            {
-                topic += AutoAttachedTopicSuffix;
-            }
             return topic;
         }
 
