@@ -15,14 +15,14 @@ using Rebus.Transport;
 namespace Rebus.AmazonSQS.Tests
 {
     [TestFixture, Category(Category.AmazonSqs)]
-    public class AmazonSqsTrivialMessageRoundtrip : SqsFixtureBase
+    public class AmazonSqsTrivialMessageRoundtrip : AmazonFixtureBase
     {
         [Test]
         public async Task CanRoundtripSingleMessageWithTransport()
         {
             var queueName = TestConfig.GetName("roundtrippin-single");
             var transport = AmazonSqsTransportFactory.CreateTransport(queueName, TimeSpan.FromSeconds(30));
-            
+
             Using(transport);
 
             const string positiveGreeting = "hej meeeeed dig min vennnnn!!!!!!111";
@@ -46,7 +46,7 @@ namespace Rebus.AmazonSQS.Tests
         {
             var brilliantQueueName = TestConfig.GetName("roundtrippin-single-bus");
             var transport = AmazonSqsTransportFactory.CreateTransport(brilliantQueueName, TimeSpan.FromSeconds(30));
-            
+
             Using(transport);
 
             using (var activator = new BuiltinHandlerActivator())

@@ -11,7 +11,7 @@ using Rebus.Tests.Contracts.Extensions;
 namespace Rebus.AmazonSQS.Tests.Bugs
 {
     [TestFixture]
-    public class CanStartWithDefaultCredsAndRegion : SqsFixtureBase
+    public class CanStartWithDefaultCredsAndRegion : AmazonFixtureBase
     {
         [Test]
         [Ignore("Can apparently only be run when EC2 creds are present")]
@@ -33,7 +33,7 @@ namespace Rebus.AmazonSQS.Tests.Bugs
                 .Transport(t =>
                 {
                     var config = new AmazonSQSConfig { RegionEndpoint = RegionEndpoint.EUWest2 };
-                    
+
                     t.UseAmazonSQS("queue", config);
                 })
                 .Start();

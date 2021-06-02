@@ -88,7 +88,13 @@ namespace Rebus.AmazonSQS
                 throw new ArgumentException($"{nameof(RegisterSubscriber)} could not retrieve ARN for subscriber '{subscriberAddress}'", subscriberAddress);
             }
 
-            await this.snsTransport.RegisterSubscriber(this.GetNativeTopicName(topic), subscriberArnAddress.FullAddress);
+            var snsTopicName = this.GetNativeTopicName(topic);
+            await this.snsTransport.RegisterSubscriber(snsTopicName, subscriberArnAddress.FullAddress);
+
+            if (!this.transportOptions.DisableAccessPolicyChecks)
+            {
+                await this.ValidateQueueAccessPolicy(subscriberArnAddress, AwsAddress.Parse(snsTopicName), true);
+            }
         }
 
         public async Task UnregisterSubscriber(string topic, string subscriberAddress)
@@ -130,6 +136,14 @@ namespace Rebus.AmazonSQS
             }
         }
 
+        public Task<bool> CheckSqsAccessPolicy(string sqsAddress, string topic)
+        {
+            return this.ValidateQueueAccessPolicy(
+                AwsAddress.FromNonQualifiedName(sqsAddress),
+                AwsAddress.FromNonQualifiedName(topic),
+                false);
+        }
+
         private async Task ValidateSubscriptionAccessPolicies(AwsAddress snsTopicAddress)
         {
             // Validates that all SQS queues that have subscriptions to the specified SNS topic have their Access
@@ -152,11 +166,11 @@ namespace Rebus.AmazonSQS
                     continue;
                 }
 
-                await this.ValidateQueueAccessPolicy(sqsQueueAddress, snsTopicAddress);
+                await this.ValidateQueueAccessPolicy(sqsQueueAddress, snsTopicAddress, true);
             }
         }
 
-        private async Task<bool> ValidateQueueAccessPolicy(AwsAddress sqsQueueAddress, AwsAddress snsTopicAddress)
+        private async Task<bool> ValidateQueueAccessPolicy(AwsAddress sqsQueueAddress, AwsAddress snsTopicAddress, bool allowUpdate)
         {
             var sqsClient = this.sqsTransport.GetClient();
             if (sqsClient == null)
@@ -167,48 +181,38 @@ namespace Rebus.AmazonSQS
             var sqsId = this.GetFullSqsId(sqsQueueAddress);
             var snsArnAddress = await this.snsTransport.GetSnsArnAddress(snsTopicAddress.ResourceId);
 
+            var statement = CreateSqsPolicyStatement(sqsId.Arn, snsArnAddress.FullAddress);
+
+            Policy updatedPolicy;
+
             var attributes = await sqsClient.GetAttributesAsync(sqsId.Url);
-
-            var statement = new Statement(Statement.StatementEffect.Allow)
-                .WithPrincipals(new Principal(Principal.SERVICE_PROVIDER, "sns.amazonaws.com"))
-                .WithActionIdentifiers(SQSActionIdentifiers.SendMessage)
-                .WithResources(new Resource(sqsId.Arn))
-                .WithConditions(ConditionFactory.NewSourceArnCondition(snsArnAddress.FullAddress));
-
-            Policy sqsPolicy;
-
-            var setPolicy = false;
-
-            var policyKey = "Policy";
-            if (attributes.ContainsKey(policyKey))
+            if (attributes.TryGetValue("Policy", out var existingPolicyStr))
             {
-                this.log.Debug($"Updating SQS Access Policy of '{sqsQueueAddress.FullAddress}' to allow topic '{snsTopicAddress.FullAddress}'");
-
-                var policyString = attributes[policyKey];
-
-                attributes = new Dictionary<string, string>();
-
-                sqsPolicy = Policy.FromJson(policyString);
-                if (!sqsPolicy.CheckIfStatementExists(statement))
+                var sqsPolicy = Policy.FromJson(existingPolicyStr);
+                if (sqsPolicy.CheckIfStatementExists(statement))
                 {
-                    attributes = new Dictionary<string, string> { { policyKey, sqsPolicy.WithStatements(statement).ToJson() } };
-                    setPolicy = true;
+                    return true;
                 }
+
+                updatedPolicy = sqsPolicy.WithStatements(statement);
             }
             else
             {
-                this.log.Debug($"Creating SQS Access Policy on '{sqsQueueAddress.FullAddress}' to allow topic '{snsTopicAddress.FullAddress}'");
-
-                attributes = new Dictionary<string, string>();
-                sqsPolicy = new Policy().WithStatements(statement);
-                attributes.Add(policyKey, sqsPolicy.ToJson());
-                setPolicy = true;
+                updatedPolicy = new Policy().WithStatements(statement);
             }
 
-            if (setPolicy)
+            if (!allowUpdate)
             {
-                await sqsClient.SetAttributesAsync(sqsId.Url, attributes);
+                return false;
             }
+
+            this.log.Debug($"Updating SQS Access Policy of '{sqsQueueAddress.FullAddress}' to allow topic '{snsTopicAddress.FullAddress}'");
+            await sqsClient.SetAttributesAsync(
+                sqsId.Url,
+                new Dictionary<string, string>
+                {
+                    { "Policy", updatedPolicy.ToJson() }
+                });
 
             return true;
         }
@@ -295,6 +299,15 @@ namespace Rebus.AmazonSQS
 
             var (_, arn) = this.sqsTransport.GetQueueId(address);
             return Task.FromResult(AwsAddress.FromArn(arn));
+        }
+
+        private static Statement CreateSqsPolicyStatement(string sqsQueueArn, string snsTopicArn)
+        {
+            return new Statement(Statement.StatementEffect.Allow)
+                .WithPrincipals(new Principal(Principal.SERVICE_PROVIDER, "sns.amazonaws.com"))
+                .WithActionIdentifiers(SQSActionIdentifiers.SendMessage)
+                .WithResources(new Resource(sqsQueueArn))
+                .WithConditions(ConditionFactory.NewSourceArnCondition(snsTopicArn));
         }
     }
 

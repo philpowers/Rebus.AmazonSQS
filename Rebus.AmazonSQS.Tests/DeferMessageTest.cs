@@ -13,7 +13,7 @@ using Rebus.Tests.Contracts.Extensions;
 namespace Rebus.AmazonSQS.Tests
 {
     [TestFixture, Category(Category.AmazonSqs)]
-    public class DeferMessageTest : SqsFixtureBase
+    public class DeferMessageTest : AmazonFixtureBase
     {
         BuiltinHandlerActivator _activator;
         RebusConfigurer _configurer;

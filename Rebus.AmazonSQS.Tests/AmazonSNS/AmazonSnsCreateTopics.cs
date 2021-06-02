@@ -6,7 +6,7 @@ using Rebus.AmazonSns.Tests;
 namespace Rebus.AmazonSQS.Tests.AmazonSNS
 {
     [TestFixture, Category(Category.AmazonSns)]
-    public class AmazonSnsCreateTopics : SqsFixtureBase
+    public class AmazonSnsCreateTopics : AmazonFixtureBase
     {
         private AmazonSnsTransportFactory _transportFactory;
 

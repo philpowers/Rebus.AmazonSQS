@@ -7,7 +7,7 @@ using Rebus.Transport;
 namespace Rebus.AmazonSQS.Tests
 {
     [TestFixture, Category(Category.AmazonSqs)]
-    public class QueueAddressHandlingTests : SqsFixtureBase
+    public class QueueAddressHandlingTests : AmazonFixtureBase
     {
         private AmazonSqsTransportFactory _transportFactory;
 

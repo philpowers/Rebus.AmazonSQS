@@ -8,7 +8,7 @@ using Rebus.Transport;
 namespace Rebus.AmazonSQS.Tests.Bugs
 {
     [TestFixture]
-    public class CanSendMoreThan10MessagesInABatch : SqsFixtureBase
+    public class CanSendMoreThan10MessagesInABatch : AmazonFixtureBase
     {
         AmazonSqsTransport _transport;
         string _inputQueueAddress;

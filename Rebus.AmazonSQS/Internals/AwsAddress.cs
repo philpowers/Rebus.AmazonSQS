@@ -40,6 +40,16 @@ namespace Rebus.Internals
                 : this.ResourceId;
         }
 
+        public static AwsAddress Parse(string address)
+        {
+            if (!TryParse(address, out var awsAddress))
+            {
+                throw new InvalidOperationException($"Could not parse AwsAddress '{address}'");
+            }
+
+            return awsAddress;
+        }
+
         public static bool TryParse(string address, out AwsAddress awsAddress)
         {
             if (Arn.IsArn(address))

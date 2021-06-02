@@ -7,7 +7,7 @@ using Rebus.Tests.Contracts;
 namespace Rebus.AmazonSQS.Tests
 {
     [TestFixture, Category(Category.AmazonSqs)]
-    public class AmazonSqsVisibiltyTimeout : SqsFixtureBase
+    public class AmazonSqsVisibiltyTimeout : AmazonFixtureBase
     {
         [Test]
         public async Task WhenMessageVisibilityIsRenewed_ThenItsNotVisibleForOthers()

@@ -13,6 +13,8 @@
         /// </summary>
         public bool AutoAttachServices { get; set; }
 
+        public bool DisableAccessPolicyChecks { get; set; }
+
         /// <summary>
         /// Default constructor of the exposed SNS transport options.
         /// </summary>

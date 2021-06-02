@@ -8,7 +8,7 @@ using Rebus.Transport;
 
 namespace Rebus.AmazonSQS.Tests
 {
-    public abstract class SqsFixtureBase : FixtureBase
+    public abstract class AmazonFixtureBase : FixtureBase
     {
         readonly Encoding _defaultEncoding = Encoding.UTF8;
 

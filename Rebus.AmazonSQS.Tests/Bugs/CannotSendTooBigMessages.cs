@@ -13,7 +13,7 @@ using Rebus.Tests.Contracts;
 namespace Rebus.AmazonSQS.Tests.Bugs
 {
     [TestFixture]
-    public class CannotSendTooBigMessages : SqsFixtureBase
+    public class CannotSendTooBigMessages : AmazonFixtureBase
     {
         string _queueName;
 

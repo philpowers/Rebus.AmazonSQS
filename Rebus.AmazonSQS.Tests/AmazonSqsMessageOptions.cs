@@ -8,7 +8,7 @@ using Rebus.Tests.Contracts;
 namespace Rebus.AmazonSQS.Tests
 {
     [TestFixture, Category(Category.AmazonSqs)]
-    public class AmazonSqsMessageOptions : SqsFixtureBase
+    public class AmazonSqsMessageOptions : AmazonFixtureBase
     {
         AmazonSqsTransportFactory _transportFactory;
 
