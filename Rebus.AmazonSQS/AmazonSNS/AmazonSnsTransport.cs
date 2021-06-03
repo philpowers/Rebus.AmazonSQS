@@ -353,6 +353,8 @@ namespace Rebus.AmazonSQS
                 return awsAddress;
             }
 
+            this.log.Info("Creating topic {topicName}", awsAddress.ResourceId);
+
             AwsAddress awsAddressFromResponse = null;
 
             AsyncHelpers.RunSync(async () =>

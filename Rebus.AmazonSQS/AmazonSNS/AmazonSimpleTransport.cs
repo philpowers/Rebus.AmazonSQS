@@ -29,6 +29,7 @@ namespace Rebus.AmazonSQS
         private readonly AmazonSqsTransport sqsTransport;
         private readonly AmazonSimpleTransportOptions transportOptions;
         private readonly ILog log;
+        private readonly HashSet<string> snsTopicPoliciesChecked;
 
         public AmazonSimpleTransport(string inputQueueAddress, AmazonSnsTransport snsTransport, AmazonSqsTransport sqsTransport, AmazonSimpleTransportOptions transportOptions, IRebusLoggerFactory rebusLoggerFactory)
         {
@@ -38,6 +39,7 @@ namespace Rebus.AmazonSQS
             this.transportOptions = transportOptions;
 
             this.log = rebusLoggerFactory.GetLogger<AmazonSimpleTransport>();
+            this.snsTopicPoliciesChecked = new HashSet<string>();
         }
 
         public void Initialize()
@@ -55,7 +57,7 @@ namespace Rebus.AmazonSQS
                 AsyncHelpers.RunSync(() => this.snsTransport.RegisterSubscriber(topicName, queueArnAddress.FullAddress));
             }
 
-            if (this.snsTransport.DefaultTopicAwsAddress != null)
+            if (!this.transportOptions.DisableAccessPolicyChecks && (this.snsTransport.DefaultTopicAwsAddress != null))
             {
                 AsyncHelpers.RunSync(() => this.ValidateSubscriptionAccessPolicies(this.snsTransport.DefaultTopicAwsAddress));
             }
@@ -115,7 +117,7 @@ namespace Rebus.AmazonSQS
             return this.sqsTransport.Receive(context, cancellationToken);
         }
 
-        public Task Send(string destinationAddress, TransportMessage message, ITransactionContext context)
+        public async Task Send(string destinationAddress, TransportMessage message, ITransactionContext context)
         {
             if (!AwsAddress.TryParse(destinationAddress, out var destAwsAddress))
             {
@@ -125,11 +127,20 @@ namespace Rebus.AmazonSQS
             switch (destAwsAddress.ServiceType)
             {
                 case AwsServiceType.Sqs:
-                    return this.sqsTransport.Send(this.GetNativeQueueAddress(destinationAddress), message, context);
+                    await this.sqsTransport.Send(this.GetNativeQueueAddress(destinationAddress), message, context);
+                    break;
 
                 case AwsServiceType.Sns:
                 case AwsServiceType.Unknown:
-                    return this.snsTransport.Send(this.GetNativeTopicName(destinationAddress), message, context);
+
+                    var snsTopicName = this.GetNativeTopicName(destinationAddress);
+                    if (!this.transportOptions.DisableAccessPolicyChecks)
+                    {
+                        await this.ValidateSubscriptionAccessPolicies(AwsAddress.Parse(snsTopicName));
+                    }
+
+                    await this.snsTransport.Send(snsTopicName, message, context);
+                    break;
 
                 default:
                     throw new InvalidOperationException($"Unsupported service '{destAwsAddress.ServiceType}' for destination address '{destinationAddress}'");
@@ -138,18 +149,27 @@ namespace Rebus.AmazonSQS
 
         public Task<bool> CheckSqsAccessPolicy(string sqsAddress, string topic)
         {
-            return this.ValidateQueueAccessPolicy(
-                AwsAddress.FromNonQualifiedName(sqsAddress),
-                AwsAddress.FromNonQualifiedName(topic),
-                false);
+            return this.ValidateQueueAccessPolicy(AwsAddress.Parse(sqsAddress), AwsAddress.Parse(topic), false);
         }
 
         private async Task ValidateSubscriptionAccessPolicies(AwsAddress snsTopicAddress)
         {
+            var snsArnAddress = await this.snsTransport.GetSnsArnAddress(snsTopicAddress.FullAddress);
+            if (snsArnAddress == null)
+            {
+                throw new InvalidOperationException($"Could not retrieve ARN '{snsTopicAddress.FullAddress}' for validation");
+            }
+
+            var isUnrecognizedTopic = this.snsTopicPoliciesChecked.Add(snsArnAddress.FullAddress);
+            if (!isUnrecognizedTopic)
+            {
+                return;
+            }
+
             // Validates that all SQS queues that have subscriptions to the specified SNS topic have their Access
             // Policies configured so that messages published from SNS have permissions to the queue.
             // If these access policies are not configured correctly, published messages will be SILENTLY DROPPED
-            var snsSubscriptions = await this.snsTransport.ListSnsSubscriptions(snsTopicAddress);
+            var snsSubscriptions = await this.snsTransport.ListSnsSubscriptions(snsArnAddress);
 
             foreach (var subscription in snsSubscriptions)
             {
@@ -166,7 +186,7 @@ namespace Rebus.AmazonSQS
                     continue;
                 }
 
-                await this.ValidateQueueAccessPolicy(sqsQueueAddress, snsTopicAddress, true);
+                await this.ValidateQueueAccessPolicy(sqsQueueAddress, snsArnAddress, true);
             }
         }
 

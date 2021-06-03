@@ -120,21 +120,6 @@ namespace Rebus.Config
                 .OtherService<AmazonSimpleTransport>()
                 .Register(c =>
                 {
-                    var sqsBus = Config.Configure.With(new BuiltinHandlerActivator())
-                        .Transport(t => t.UseAmazonSQS(
-                            credentials,
-                            servicesConfig.SQSClientConfig,
-                            inputQueueAddress,
-                            servicesConfig.SQSTransportOptions))
-                        .Start();
-
-                    var snsBus = Config.Configure.With(new BuiltinHandlerActivator())
-                        .Transport(t => t.UseAmazonSNSAsOneWayClient(
-                            credentials,
-                            transportOptions: servicesConfig.SNSTransportOptions,
-                            clientConfig: servicesConfig.SNSClientConfig))
-                        .Start();
-
                     var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
 
                     return new AmazonSimpleTransport(
