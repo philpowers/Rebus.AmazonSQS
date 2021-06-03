@@ -3,12 +3,9 @@ using Amazon;
 using Amazon.Runtime;
 using Amazon.SimpleNotificationService;
 using Amazon.SQS;
-using Rebus.Activation;
 using Rebus.AmazonSQS;
 using Rebus.Logging;
 using Rebus.Subscriptions;
-using Rebus.Threading;
-using Rebus.Time;
 using Rebus.Transport;
 // ReSharper disable ArgumentsStyleNamedExpression
 
@@ -120,12 +117,31 @@ namespace Rebus.Config
                     var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
 
                     Func<string, AmazonSNSTransportOptions, AmazonSnsTransport> snsTransportFactory = (topicName, snsTransportOptions) => {
-                        AmazonSNSConfigurationExtensions.Configure(configurer, false, inputQueueAddress, snsTransportOptions ?? servicesConfig.SNSTransportOptions);
+                        AmazonSNSConfigurationExtensions.Configure(
+                            configurer,
+                            false,
+                            inputQueueAddress,
+                            AmazonSNSConfigurationExtensions.GetTransportOptions(
+                                snsTransportOptions,
+                                credentials,
+                                servicesConfig.SNSClientConfig.RegionEndpoint,
+                                servicesConfig.SNSClientConfig),
+                            false);
+
                         return c.Get<AmazonSnsTransport>();
                     };
 
                     Func<string, AmazonSQSTransportOptions, AmazonSqsTransport> sqsTransportFactory = (queueName, sqsTransportOptions) => {
-                        AmazonSQSConfigurationExtensions.Configure(configurer, false, inputQueueAddress, servicesConfig.SQSTransportOptions);
+                        AmazonSQSConfigurationExtensions.Configure(
+                            configurer,
+                            false,
+                            inputQueueAddress,
+                            AmazonSQSConfigurationExtensions.GetTransportOptions(
+                                sqsTransportOptions,
+                                credentials,
+                                servicesConfig.SQSClientConfig),
+                            false);
+
                         return c.Get<AmazonSqsTransport>();
                     };
 
@@ -137,9 +153,11 @@ namespace Rebus.Config
                         rebusLoggerFactory);
                 });
 
+            configurer.Register(c => c.Get<AmazonSimpleTransport>());
+
             configurer
                 .OtherService<ISubscriptionStorage>()
-                .Register(c => c.Get<AmazonSnsTransport>(), description: AmazonSimpleSubText);
+                .Register(c => c.Get<AmazonSimpleTransport>(), description: AmazonSimpleSubText);
         }
     }
 }

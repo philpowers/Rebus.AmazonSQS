@@ -18,7 +18,7 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
         [Test]
         public async Task AutoAttachServicesWithAccessPolicyChecksEnabled_CreatesSqsAccessPolicyAtInitialization()
         {
-            var name = $"autoattach-pce-{($"{DateTime.Now:yyyyMMdd-HHmmss}")}";
+            var name = $"autoattach-pce-{DateTime.Now:yyyyMMdd-HHmmss}";
 
             var simpleTransport = _simpleTransportFactory.CreateTransport(
                 name,
@@ -32,7 +32,7 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
         [Test]
         public async Task AutoAttachServicesWithAccessPolicyChecksDisabled_DoesNotCreatesSqsAccessPolicyAtInitialization()
         {
-            var name = $"autoattach-pcd-{($"{DateTime.Now:yyyyMMdd-HHmmss}")}";
+            var name = $"autoattach-pcd-{DateTime.Now:yyyyMMdd-HHmmss}";
 
             var simpleTransport = _simpleTransportFactory.CreateTransport(
                 name,

@@ -78,7 +78,7 @@ namespace Rebus.Config
             Configure(configurer, true, null, GetTransportOptions(transportOptions, credentials, regionEndpoint, clientConfig));
         }
 
-        private static AmazonSNSTransportOptions GetTransportOptions(AmazonSNSTransportOptions options, AWSCredentials credentials, RegionEndpoint regionEndpoint, AmazonSimpleNotificationServiceConfig clientConfig)
+        internal static AmazonSNSTransportOptions GetTransportOptions(AmazonSNSTransportOptions options, AWSCredentials credentials, RegionEndpoint regionEndpoint, AmazonSimpleNotificationServiceConfig clientConfig)
         {
             options = options ?? new AmazonSNSTransportOptions();
 

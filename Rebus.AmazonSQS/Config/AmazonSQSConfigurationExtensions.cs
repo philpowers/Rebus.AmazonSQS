@@ -112,7 +112,7 @@ namespace Rebus.Config
             Configure(configurer, true, null, GetTransportOptions(options, null, null));
         }
 
-        static AmazonSQSTransportOptions GetTransportOptions(AmazonSQSTransportOptions options, AWSCredentials credentials, AmazonSQSConfig config)
+        internal static AmazonSQSTransportOptions GetTransportOptions(AmazonSQSTransportOptions options, AWSCredentials credentials, AmazonSQSConfig config)
         {
             options = options ?? new AmazonSQSTransportOptions();
 
