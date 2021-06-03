@@ -132,14 +132,19 @@ namespace Rebus.Config
                     };
 
                     Func<string, AmazonSQSTransportOptions, AmazonSqsTransport> sqsTransportFactory = (queueName, sqsTransportOptions) => {
+
+                        sqsTransportOptions = AmazonSQSConfigurationExtensions.GetTransportOptions(
+                            sqsTransportOptions,
+                            credentials,
+                            servicesConfig.SQSClientConfig);
+
+                        sqsTransportOptions.UseNativeDeferredMessages = false;
+
                         AmazonSQSConfigurationExtensions.Configure(
                             configurer,
                             false,
                             inputQueueAddress,
-                            AmazonSQSConfigurationExtensions.GetTransportOptions(
-                                sqsTransportOptions,
-                                credentials,
-                                servicesConfig.SQSClientConfig),
+                            sqsTransportOptions,
                             false);
 
                         return c.Get<AmazonSqsTransport>();

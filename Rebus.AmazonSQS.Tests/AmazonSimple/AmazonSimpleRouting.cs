@@ -27,7 +27,7 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
 
             var connectionInfo = AmazonSqsTransportFactory.ConnectionInfo;
 
-            _activator.Handle<string>(async (b, c, msg) => {
+            _activator.Handle(async (string msg) => {
                 Console.WriteLine($"Handled string: '{msg}'");
             });
 
@@ -36,7 +36,8 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
                     queueName,
                     connectionInfo.AccessKeyId,
                     connectionInfo.SecretAccessKey,
-                    connectionInfo.RegionEndpoint))
+                    connectionInfo.RegionEndpoint,
+                    new AmazonSimpleTransportOptions { AutoAttachServices = true }))
                 .Start();
 
             await bus.Publish($"content-{timeSuffix}");
