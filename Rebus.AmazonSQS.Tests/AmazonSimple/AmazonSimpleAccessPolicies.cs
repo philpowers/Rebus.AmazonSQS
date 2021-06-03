@@ -20,7 +20,7 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
         {
             var name = $"autoattach-pce-{($"{DateTime.Now:yyyyMMdd-HHmmss}")}";
 
-            var (simpleTransport, _, _) = _simpleTransportFactory.CreateTransports(
+            var simpleTransport = _simpleTransportFactory.CreateTransport(
                 name,
                 TimeSpan.FromMinutes(1),
                 new Config.AmazonSimpleTransportOptions { AutoAttachServices = true, DisableAccessPolicyChecks = false });
@@ -34,7 +34,7 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
         {
             var name = $"autoattach-pcd-{($"{DateTime.Now:yyyyMMdd-HHmmss}")}";
 
-            var (simpleTransport, _, _) = _simpleTransportFactory.CreateTransports(
+            var simpleTransport = _simpleTransportFactory.CreateTransport(
                 name,
                 TimeSpan.FromMinutes(1),
                 new Config.AmazonSimpleTransportOptions { AutoAttachServices = true, DisableAccessPolicyChecks = true });
@@ -50,10 +50,12 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
             var sqsQueueName = $"newtopicaccess-queue-{timeSuffix}";
             var snsTopic = $"newtopicaccess-topic-{timeSuffix}";
 
-            var (simpleTransport, snsTransport, sqsTransport) = _simpleTransportFactory.CreateTransports(
+            var simpleTransport = _simpleTransportFactory.CreateTransport(
                 sqsQueueName,
                 TimeSpan.FromMinutes(1),
                 new Config.AmazonSimpleTransportOptions { AutoAttachServices = false, DisableAccessPolicyChecks = false });
+
+            var (snsTransport, sqsTransport) = simpleTransport.GetInternalTransports();
 
             snsTransport.CreateQueue(snsTopic);
 
@@ -66,13 +68,9 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
             {
                 await simpleTransport.Send(snsTopic, MessageWith($"newtopicaccess-content-{timeSuffix}"), context);
 
-                //var receivedMessage = await simpleTransport.Receive(context, default);
-                //Assert.NotNull(receivedMessage);
-
                 var snsHasAccessToSqs = await simpleTransport.CheckSqsAccessPolicy(sqsQueueName, snsTopic);
                 Assert.True(snsHasAccessToSqs);
             });
-
         }
 
         [Test]
@@ -82,10 +80,12 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
             var sqsQueueName = $"registersub-queue-{timeSuffix}";
             var snsTopic = $"registersub-topic-{timeSuffix}";
 
-            var (simpleTransport, snsTransport, _) = _simpleTransportFactory.CreateTransports(
+            var simpleTransport = _simpleTransportFactory.CreateTransport(
                 sqsQueueName,
                 TimeSpan.FromMinutes(1),
                 new Config.AmazonSimpleTransportOptions { AutoAttachServices = false, DisableAccessPolicyChecks = false });
+
+            var (snsTransport, _) = simpleTransport.GetInternalTransports();
 
             snsTransport.CreateQueue(snsTopic);
 

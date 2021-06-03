@@ -113,19 +113,26 @@ namespace Rebus.Config
             if (credentials == null) throw new ArgumentNullException(nameof(credentials));
             if (servicesConfig == null) throw new ArgumentNullException(nameof(servicesConfig));
 
-            AmazonSQSConfigurationExtensions.Configure(configurer, false, inputQueueAddress, servicesConfig.SQSTransportOptions);
-            AmazonSNSConfigurationExtensions.Configure(configurer, false, inputQueueAddress, servicesConfig.SNSTransportOptions);
-
             configurer
                 .OtherService<AmazonSimpleTransport>()
                 .Register(c =>
                 {
                     var rebusLoggerFactory = c.Get<IRebusLoggerFactory>();
 
+                    Func<string, AmazonSNSTransportOptions, AmazonSnsTransport> snsTransportFactory = (topicName, snsTransportOptions) => {
+                        AmazonSNSConfigurationExtensions.Configure(configurer, false, inputQueueAddress, snsTransportOptions ?? servicesConfig.SNSTransportOptions);
+                        return c.Get<AmazonSnsTransport>();
+                    };
+
+                    Func<string, AmazonSQSTransportOptions, AmazonSqsTransport> sqsTransportFactory = (queueName, sqsTransportOptions) => {
+                        AmazonSQSConfigurationExtensions.Configure(configurer, false, inputQueueAddress, servicesConfig.SQSTransportOptions);
+                        return c.Get<AmazonSqsTransport>();
+                    };
+
                     return new AmazonSimpleTransport(
                         inputQueueAddress,
-                        c.Get<AmazonSnsTransport>(),
-                        c.Get<AmazonSqsTransport>(),
+                        snsTransportFactory,
+                        sqsTransportFactory,
                         transportOptions,
                         rebusLoggerFactory);
                 });

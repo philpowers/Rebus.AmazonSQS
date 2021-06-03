@@ -63,31 +63,6 @@ namespace Rebus.AmazonSQS
             this.topicArnCache = new ConcurrentDictionary<string, string>();
         }
 
-        public void Initialize(string defaultTopicAddress, bool enableAutoCreate)
-        {
-            if (enableAutoCreate)
-            {
-                if (this.options.CreateTopicsOptions == null)
-                {
-                    this.options.CreateTopicsOptions = new AmazonSNSCreateTopicsOptions();
-                }
-                this.options.CreateTopicsOptions.CreateTopics = true;
-            }
-
-            if (!string.IsNullOrEmpty(defaultTopicAddress))
-            {
-                if (!AwsAddress.TryParse(defaultTopicAddress, out var defaultTopicAwsAddress))
-                {
-                    var message = $"The default topic address '{defaultTopicAddress}' is not valid - please use either the full ARN for the topic (e.g. 'arn:aws:sns:us-west-2:12345:my-topic') or a simple topic name (eg. 'my-topic').";
-                    throw new ArgumentException(message, nameof(defaultTopicAddress));
-                }
-
-                this.DefaultTopicAwsAddress = defaultTopicAwsAddress;
-            }
-
-            this.Initialize();
-        }
-
         public void Initialize()
         {
             this.log.Info("Initializing SNS client");
@@ -291,7 +266,7 @@ namespace Rebus.AmazonSQS
             if (!this.warnedOnArnLookup)
             {
                 this.warnedOnArnLookup = true;
-                this.log.Warn($"Getting ARN for topic '{topic}'; for best performance, specify all SNS addresses using their ARNs");
+                this.log.Info($"Getting ARN for topic '{topic}'; for best performance, specify all SNS addresses using their ARNs");
             }
 
             var arnStr = await this.LookupArnForTopicName(topic);

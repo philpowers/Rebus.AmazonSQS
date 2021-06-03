@@ -14,7 +14,7 @@ namespace Rebus.AmazonSns.Tests
 
         }
 
-        public (AmazonSimpleTransport, AmazonSnsTransport, AmazonSqsTransport) CreateTransports(
+        public AmazonSimpleTransport CreateTransport(
             string inputQueueAddress,
             TimeSpan peeklockDuration,
             AmazonSimpleTransportOptions options = null)
@@ -24,18 +24,21 @@ namespace Rebus.AmazonSns.Tests
                 options = new AmazonSimpleTransportOptions { AutoAttachServices = true };
             }
 
-            var snsTransport = AmazonSnsTransportFactory.CreateTransport(null, peeklockDuration);
-            var sqsTransport = AmazonSqsTransportFactory.CreateTransport(inputQueueAddress, peeklockDuration);
+            var simpleTransport = new AmazonSimpleTransport(
+                inputQueueAddress,
+                (topicName, snsOptions) => AmazonSnsTransportFactory.CreateTransport(topicName, peeklockDuration),
+                (queueName, sqsOptions) => AmazonSqsTransportFactory.CreateTransport(inputQueueAddress, peeklockDuration),
+                options,
+                new ConsoleLoggerFactory(false));
 
-            var simpleTransport = new AmazonSimpleTransport(inputQueueAddress, snsTransport, sqsTransport, options, new ConsoleLoggerFactory(false));
             simpleTransport.Initialize();
 
-            return (simpleTransport, snsTransport, sqsTransport);
+            return simpleTransport;
         }
 
         protected override ITransport CreateInstance(string inputQueueAddress, TimeSpan peeklockDuration, AmazonSimpleTransportOptions options)
         {
-            var (simpleTransport, _, _) = CreateTransports(inputQueueAddress, peeklockDuration, options);
+            var simpleTransport = CreateTransport(inputQueueAddress, peeklockDuration, options);
 
             return simpleTransport;
         }

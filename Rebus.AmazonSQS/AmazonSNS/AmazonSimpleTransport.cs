@@ -24,18 +24,26 @@ namespace Rebus.AmazonSQS
         public string Address => this.snsTransport?.Address;
         public bool IsCentralized => true;
 
+        private AmazonSnsTransport snsTransport;
+        private AmazonSqsTransport sqsTransport;
+
         private readonly string inputQueueName;
-        private readonly AmazonSnsTransport snsTransport;
-        private readonly AmazonSqsTransport sqsTransport;
+        private readonly Func<string, AmazonSNSTransportOptions, AmazonSnsTransport> snsTransportFactory;
+        private readonly Func<string, AmazonSQSTransportOptions, AmazonSqsTransport> sqsTransportFactory;
         private readonly AmazonSimpleTransportOptions transportOptions;
         private readonly ILog log;
         private readonly HashSet<string> snsTopicPoliciesChecked;
 
-        public AmazonSimpleTransport(string inputQueueAddress, AmazonSnsTransport snsTransport, AmazonSqsTransport sqsTransport, AmazonSimpleTransportOptions transportOptions, IRebusLoggerFactory rebusLoggerFactory)
+        public AmazonSimpleTransport(
+            string inputQueueAddress,
+            Func<string, AmazonSNSTransportOptions, AmazonSnsTransport> snsTransportFactory,
+            Func<string, AmazonSQSTransportOptions, AmazonSqsTransport> sqsTransportFactory,
+            AmazonSimpleTransportOptions transportOptions,
+            IRebusLoggerFactory rebusLoggerFactory)
         {
             this.inputQueueName = inputQueueAddress;
-            this.snsTransport = snsTransport;
-            this.sqsTransport = sqsTransport;
+            this.snsTransportFactory = snsTransportFactory;
+            this.sqsTransportFactory = sqsTransportFactory;
             this.transportOptions = transportOptions;
 
             this.log = rebusLoggerFactory.GetLogger<AmazonSimpleTransport>();
@@ -47,8 +55,21 @@ namespace Rebus.AmazonSQS
             var topicName = this.GetNativeTopicName(this.inputQueueName);
             var queueAddress = this.GetNativeQueueAddress(this.inputQueueName);
 
-            this.snsTransport.Initialize(topicName, this.transportOptions.AutoAttachServices);
-            this.sqsTransport.Initialize(queueAddress, this.transportOptions.AutoAttachServices);
+            var snsTransportOptions = new AmazonSNSTransportOptions();
+            if (this.transportOptions.AutoAttachServices)
+            {
+                snsTransportOptions.CreateTopicsOptions.CreateTopics = true;
+            }
+            this.snsTransport = this.snsTransportFactory(topicName, snsTransportOptions);
+            this.snsTransport.Initialize();
+
+            var sqsTransportOptions = new AmazonSQSTransportOptions();
+            if (this.transportOptions.AutoAttachServices)
+            {
+                sqsTransportOptions.CreateQueues = true;
+            }
+            this.sqsTransport = this.sqsTransportFactory(queueAddress, sqsTransportOptions);
+            this.sqsTransport.Initialize();
 
             if (this.transportOptions.AutoAttachServices && !string.IsNullOrEmpty(this.inputQueueName))
             {
@@ -150,6 +171,14 @@ namespace Rebus.AmazonSQS
         public Task<bool> CheckSqsAccessPolicy(string sqsAddress, string topic)
         {
             return this.ValidateQueueAccessPolicy(AwsAddress.Parse(sqsAddress), AwsAddress.Parse(topic), false);
+        }
+
+        /// <summary>
+        /// This is to aid testing, and should really only be used in that context
+        /// </summary>
+        public (AmazonSnsTransport, AmazonSqsTransport) GetInternalTransports()
+        {
+            return (this.snsTransport, this.sqsTransport);
         }
 
         private async Task ValidateSubscriptionAccessPolicies(AwsAddress snsTopicAddress)
