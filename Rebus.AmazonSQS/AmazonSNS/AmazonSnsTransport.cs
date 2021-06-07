@@ -42,6 +42,7 @@ namespace Rebus.AmazonSQS
         private readonly AmazonSNSTransportOptions options;
         private readonly ILog log;
 
+
         public AmazonSnsTransport(string defaultTopicAddress, AmazonSNSTransportOptions options, IRebusLoggerFactory rebusLoggerFactory) : base(null)
         {
             if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
@@ -71,15 +72,15 @@ namespace Rebus.AmazonSQS
 
             if (this.DefaultTopicAwsAddress != null)
             {
-                if (this.options.CreateTopicsOptions?.CreateTopics == true)
+                AsyncHelpers.RunSync(async () =>
                 {
-                    this.DefaultTopicAwsAddress = this.CreateSnsTopic(this.DefaultTopicAwsAddress);
-                }
+                    if (this.options.CreateTopicsOptions?.CreateTopics == true)
+                    {
+                        this.DefaultTopicAwsAddress = await this.CreateSnsTopic(this.DefaultTopicAwsAddress.ResourceId);
+                    }
 
-                // Make sure that we've got an ARN
-                if (this.DefaultTopicAwsAddress.AddressType != AwsAddressType.Arn)
-                {
-                    AsyncHelpers.RunSync(async () =>
+                    // Make sure that we've got an ARN
+                    if (this.DefaultTopicAwsAddress.AddressType != AwsAddressType.Arn)
                     {
                         var topicArn = await this.LookupArnForTopicName(this.DefaultTopicAwsAddress.ResourceId);
                         if (topicArn == null)
@@ -88,8 +89,8 @@ namespace Rebus.AmazonSQS
                         }
 
                         this.DefaultTopicAwsAddress = AwsAddress.FromArn(topicArn);
-                    });
-                }
+                    }
+                });
 
                 // Seed the topic -> ARN cache with our own topic name
                 this.topicArnCache[this.DefaultTopicAwsAddress.ResourceId] = this.DefaultTopicAwsAddress.FullAddress;
@@ -115,10 +116,12 @@ namespace Rebus.AmazonSQS
         /// </summary>
         public async Task<string[]> GetSubscriberAddresses(string topic)
         {
-            var arnAddress = await this.GetSnsArnAddress(topic);
+            var internalTopicName = GetInternalTopicName(topic);
+
+            var arnAddress = await this.GetSnsArnAddress(internalTopicName, false);
             if (arnAddress == null)
             {
-                throw new InvalidOperationException($"{nameof(GetSubscriberAddresses)} could not get ARN for topic '{topic}'");
+                throw new InvalidOperationException($"{nameof(GetSubscriberAddresses)} could not get ARN for topic '{internalTopicName}'");
             }
 
             return new string[] { arnAddress.FullAddress };
@@ -126,10 +129,12 @@ namespace Rebus.AmazonSQS
 
         public async Task RegisterSubscriber(string topic, string subscriberAddress)
         {
-            var topicArnAddress = await this.GetSnsArnAddress(topic);
+            var internalTopicName = GetInternalTopicName(topic);
+
+            var topicArnAddress = await this.GetSnsArnAddress(internalTopicName, true);
             if (topicArnAddress == null)
             {
-                throw new InvalidOperationException($"{nameof(RegisterSubscriber)} could not get ARN for topic '{topic}'");
+                throw new InvalidOperationException($"{nameof(RegisterSubscriber)} could not get ARN for topic '{internalTopicName}'");
             }
 
             if (!AwsAddress.TryParse(subscriberAddress, out var subscriberArnAddress) || (subscriberArnAddress.AddressType != AwsAddressType.Arn))
@@ -160,13 +165,15 @@ namespace Rebus.AmazonSQS
 
         public async Task UnregisterSubscriber(string topic, string subscriberAddress)
         {
-            var topicArnAddress = await this.GetSnsArnAddress(topic);
+            var internalTopicName = GetInternalTopicName(topic);
+
+            var topicArnAddress = await this.GetSnsArnAddress(internalTopicName, false);
             if (topicArnAddress == null)
             {
-                throw new InvalidOperationException($"{nameof(UnregisterSubscriber)} could not get ARN for topic '{topic}'");
+                throw new InvalidOperationException($"{nameof(UnregisterSubscriber)} could not get ARN for topic '{internalTopicName}'");
             }
 
-            var subscriberArnAddress = await this.GetSnsArnAddress(subscriberAddress);
+            var subscriberArnAddress = await this.GetSnsArnAddress(subscriberAddress, false);
             if (subscriberArnAddress == null)
             {
                 throw new InvalidOperationException($"{nameof(UnregisterSubscriber)} could not parse subscriber address '{subscriberAddress}'");
@@ -197,7 +204,7 @@ namespace Rebus.AmazonSQS
 
         public override void CreateQueue(string address)
         {
-            this.CreateSnsTopic(AwsAddress.FromNonQualifiedName(address));
+            AsyncHelpers.RunSync(() => this.CreateSnsTopic(address));
         }
 
         public void DeleteTopic()
@@ -212,22 +219,26 @@ namespace Rebus.AmazonSQS
 
         public async Task<string> LookupArnForTopicName(string topicName)
         {
-            return this.topicArnCache.GetOrAdd(topicName, _ =>
+            var internalTopicName = GetInternalTopicName(topicName);
+
+            return this.topicArnCache.GetOrAdd(internalTopicName, _ =>
             {
                 // WARNING: The implementation of FindTopicAsync loops through all existing SNS topics until it finds
                 // the specified one, which could cause performance problems if there are a lot of topics associated
                 // with the current AWS account.
-                var topic = AsyncHelpers.GetSync(() => this.client.FindTopicAsync(topicName));
+                var topic = AsyncHelpers.GetSync(() => this.client.FindTopicAsync(internalTopicName));
                 return topic?.TopicArn;
             });
         }
 
         public async Task<List<Subscription>> ListSnsSubscriptions(string topic)
         {
-            var topicAddress = await this.GetSnsArnAddress(topic);
+            var internalTopicName = GetInternalTopicName(topic);
+
+            var topicAddress = await this.GetSnsArnAddress(internalTopicName, false);
             if (topicAddress == null)
             {
-                throw new InvalidOperationException($"Could not get address for topic '{topic}'");
+                throw new InvalidOperationException($"Could not get address for topic '{internalTopicName}'");
             }
 
             return await this.ListSnsSubscriptions(topicAddress);
@@ -246,14 +257,14 @@ namespace Rebus.AmazonSQS
             return await subsPaginator.Subscriptions.ToListAsync();
         }
 
-        internal async Task<AwsAddress> GetSnsArnAddress(string topic)
+        internal async Task<AwsAddress> GetSnsArnAddress(string internalTopicName, bool createIfNotExists)
         {
-            if (string.IsNullOrEmpty(topic))
+            if (string.IsNullOrEmpty(internalTopicName))
             {
                 return null;
             }
 
-            if (!AwsAddress.TryParse(topic, out var awsAddress))
+            if (!AwsAddress.TryParse(internalTopicName, out var awsAddress))
             {
                 return null;
             }
@@ -266,26 +277,39 @@ namespace Rebus.AmazonSQS
             if (!this.warnedOnArnLookup)
             {
                 this.warnedOnArnLookup = true;
-                this.log.Info($"Getting ARN for topic '{topic}'; for best performance, specify all SNS addresses using their ARNs");
+                this.log.Info($"Getting ARN for topic '{internalTopicName}'; for best performance, specify all SNS addresses using their ARNs");
             }
 
-            var arnStr = await this.LookupArnForTopicName(topic);
-            if (string.IsNullOrEmpty(arnStr))
+            var arnStr = await this.LookupArnForTopicName(internalTopicName);
+            if (!string.IsNullOrEmpty(arnStr))
+            {
+                return AwsAddress.FromArn(arnStr);
+            }
+
+            if (!createIfNotExists)
             {
                 return null;
             }
 
-            return AwsAddress.FromArn(arnStr);
+            awsAddress = await this.CreateSnsTopic(internalTopicName);
+            if (awsAddress != null)
+            {
+                this.topicArnCache[internalTopicName] = awsAddress.FullAddress;
+            }
+
+            return awsAddress;
         }
 
         protected override async Task SendOutgoingMessages(IEnumerable<OutgoingMessage> outgoingMessages, ITransactionContext context)
         {
             foreach (var outgoingMessage in outgoingMessages)
             {
-                var destinationArnAddress = await this.GetSnsArnAddress(outgoingMessage.DestinationAddress);
+                var internalTopicName = GetInternalTopicName(outgoingMessage.DestinationAddress);
+
+                var destinationArnAddress = await this.GetSnsArnAddress(internalTopicName, true);
                 if (destinationArnAddress == null)
                 {
-                    throw new RebusApplicationException($"Could not find ARN for destination SNS topic: {outgoingMessage.DestinationAddress}");
+                    throw new RebusApplicationException($"Could not find ARN for destination SNS topic: {internalTopicName}");
                 }
 
                 // @todo(PQP): Implement support for setting Subject through headers
@@ -321,49 +345,42 @@ namespace Rebus.AmazonSQS
             this.client?.Dispose();
         }
 
-        private AwsAddress CreateSnsTopic(AwsAddress awsAddress)
+        private async Task<AwsAddress> CreateSnsTopic(string internalTopicName)
         {
             if (this.options.CreateTopicsOptions?.CreateTopics != true)
             {
-                return awsAddress;
+                return null;
             }
 
-            this.log.Info("Creating topic {topicName}", awsAddress.ResourceId);
+            this.log.Info("Creating topic {topicName}", internalTopicName);
 
-            AwsAddress awsAddressFromResponse = null;
-
-            AsyncHelpers.RunSync(async () =>
+            try
             {
-                try
+                var createTopicRequest = new CreateTopicRequest
                 {
-                    var createTopicRequest = new CreateTopicRequest
-                    {
-                        Name = awsAddress.ResourceId,
+                    Name = internalTopicName,
 
-                        // See list of possible attributes here:
-                        // https://docs.aws.amazon.com/sdkfornet/v3/apidocs/items/SNS/TCreateTopicRequest.html
-                        Attributes = new Dictionary<string, string>
-                        {
-                            { "FifoTopic", this.options.CreateTopicsOptions.UseFifo.ToString() } ,
-                            { "ContentBasedDeduplication", this.options.CreateTopicsOptions.ContentBasedDeduplication.ToString() }
-                        }
-                    };
-
-                    var createTopicResponse = await this.client.CreateTopicAsync(awsAddress.ResourceId);
-                    if (createTopicResponse.HttpStatusCode != HttpStatusCode.OK)
+                    // See list of possible attributes here:
+                    // https://docs.aws.amazon.com/sdkfornet/v3/apidocs/items/SNS/TCreateTopicRequest.html
+                    Attributes = new Dictionary<string, string>
                     {
-                        throw new Exception($"Could not create SNS topic '{awsAddress.ResourceId}' - got HTTP {createTopicResponse.HttpStatusCode}");
+                        { "FifoTopic", this.options.CreateTopicsOptions.UseFifo.ToString() } ,
+                        { "ContentBasedDeduplication", this.options.CreateTopicsOptions.ContentBasedDeduplication.ToString() }
                     }
+                };
 
-                    awsAddressFromResponse = AwsAddress.FromArn(createTopicResponse.TopicArn);
-                }
-                catch (AmazonServiceException ex)
+                var createTopicResponse = await this.client.CreateTopicAsync(internalTopicName);
+                if (createTopicResponse.HttpStatusCode != HttpStatusCode.OK)
                 {
-                    throw new Exception($"Got error from AWS: {ex}");
+                    throw new Exception($"Could not create SNS topic '{internalTopicName}' - got HTTP {createTopicResponse.HttpStatusCode}");
                 }
-            });
 
-            return awsAddressFromResponse;
+                return AwsAddress.FromArn(createTopicResponse.TopicArn);
+            }
+            catch (AmazonServiceException ex)
+            {
+                throw new Exception($"Got error from AWS: {ex}");
+            }
         }
 
         private static bool IsValidAddress(string address)
@@ -410,6 +427,22 @@ namespace Rebus.AmazonSQS
 
             var arn = $"arn:aws:sns:{this.client.Config.RegionEndpoint.SystemName}:{accountId}:{awsAddress.ResourceId}";
             return AwsAddress.FromArn(arn);
+        }
+
+        private static bool IsValidInternalCharacter(char c)
+        {
+            // See: https://docs.aws.amazon.com/sns/latest/api/API_CreateTopic.html
+            return char.IsLetterOrDigit(c) || c == '_' || c == '-';
+        }
+
+        private static string GetInternalTopicName(string topic)
+        {
+            if (topic.StartsWith("arn:aws:sns:"))
+            {
+                return topic;
+            }
+
+            return string.Concat(topic.Select(c => IsValidInternalCharacter(c) ? c : '_'));
         }
     }
 }

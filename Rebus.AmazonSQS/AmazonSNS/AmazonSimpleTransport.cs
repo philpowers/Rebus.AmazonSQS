@@ -21,7 +21,7 @@ namespace Rebus.AmazonSQS
     /// </summary>
     public class AmazonSimpleTransport : ITransport, ISubscriptionStorage, IInitializable
     {
-        public string Address => this.snsTransport?.Address;
+        public string Address => this.sqsTransport?.Address;
         public bool IsCentralized => true;
 
         private AmazonSnsTransport snsTransport;
@@ -183,7 +183,7 @@ namespace Rebus.AmazonSQS
 
         private async Task ValidateSubscriptionAccessPolicies(AwsAddress snsTopicAddress)
         {
-            var snsArnAddress = await this.snsTransport.GetSnsArnAddress(snsTopicAddress.FullAddress);
+            var snsArnAddress = await this.snsTransport.GetSnsArnAddress(snsTopicAddress.FullAddress, false);
             if (snsArnAddress == null)
             {
                 throw new InvalidOperationException($"Could not retrieve ARN '{snsTopicAddress.FullAddress}' for validation");
@@ -228,7 +228,7 @@ namespace Rebus.AmazonSQS
             }
 
             var sqsId = this.GetFullSqsId(sqsQueueAddress);
-            var snsArnAddress = await this.snsTransport.GetSnsArnAddress(snsTopicAddress.ResourceId);
+            var snsArnAddress = await this.snsTransport.GetSnsArnAddress(snsTopicAddress.ResourceId, false);
 
             var statement = CreateSqsPolicyStatement(sqsId.Arn, snsArnAddress.FullAddress);
 
