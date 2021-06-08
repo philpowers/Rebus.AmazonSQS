@@ -76,11 +76,12 @@ namespace Rebus.AmazonSQS
                 var queueArnAddress = AsyncHelpers.GetSync(() => this.GetSqsArnAddress(queueAddress));
 
                 AsyncHelpers.RunSync(() => this.snsTransport.RegisterSubscriber(topicName, queueArnAddress.FullAddress));
-            }
 
-            if (!this.transportOptions.DisableAccessPolicyChecks && (this.snsTransport.DefaultTopicAwsAddress != null))
-            {
-                AsyncHelpers.RunSync(() => this.ValidateSubscriptionAccessPolicies(this.snsTransport.DefaultTopicAwsAddress));
+                if (!this.transportOptions.DisableAccessPolicyChecks && (!string.IsNullOrEmpty(topicName)))
+                {
+                    AsyncHelpers.RunSync(() => this.ValidateSubscriptionAccessPolicies(AwsAddress.Parse(topicName)));
+                }
+
             }
         }
 

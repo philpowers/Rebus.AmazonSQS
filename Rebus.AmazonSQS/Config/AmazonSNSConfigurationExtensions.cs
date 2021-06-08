@@ -134,7 +134,7 @@ namespace Rebus.Config
                     var asyncTaskFactory = c.Get<IAsyncTaskFactory>();
                     var rebusTime = c.Get<IRebusTime>();
 
-                    return new AmazonSnsTransport(defaultTopicAddress, options, rebusLoggerFactory);
+                    return new AmazonSnsTransport(options, rebusLoggerFactory);
                 });
 
             if (registerAsDefaultTransport)

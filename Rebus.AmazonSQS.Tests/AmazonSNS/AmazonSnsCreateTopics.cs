@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Rebus.AmazonSns.Tests;
+using Rebus.Transport;
 
 namespace Rebus.AmazonSQS.Tests.AmazonSNS
 {
@@ -27,6 +28,12 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
             var inputTopicName = $"nqtopic-{DateTime.Now:yyyyMMdd-HHmmss}";
 
             var transport = (AmazonSnsTransport)_transportFactory.Create(inputTopicName, TimeSpan.FromMinutes(1));
+
+            using (var scope = new RebusTransactionScope())
+            {
+                await transport.Send(inputTopicName, MessageWith("nqtnTest"), scope.TransactionContext);
+                scope.Complete();
+            }
 
             var topicArn = await transport.LookupArnForTopicName(inputTopicName);
 

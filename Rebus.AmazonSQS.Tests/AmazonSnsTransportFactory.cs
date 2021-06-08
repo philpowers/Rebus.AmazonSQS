@@ -20,7 +20,7 @@ namespace Rebus.AmazonSns.Tests
                                                                              ?? Throw($"Could not find Amazon SNS connection info - configure in file '{ConfigFileName}' or environment variable '{ConfigEnvironmentVariable}'");
 
         public AmazonSnsTransportFactory()
-            : base(t => ((AmazonSnsTransport)t).DeleteTopic())
+            : base(t => { })
         {
         }
 
@@ -35,7 +35,6 @@ namespace Rebus.AmazonSns.Tests
             options.ClientFactory = () => new AmazonSimpleNotificationServiceClient(credentials, amazonSnsConfig);
 
             var transport = new AmazonSnsTransport(
-                inputQueueAddress,
                 options,
                 new ConsoleLoggerFactory(false));
 
