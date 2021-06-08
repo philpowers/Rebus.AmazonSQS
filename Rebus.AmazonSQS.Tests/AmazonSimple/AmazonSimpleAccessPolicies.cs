@@ -16,6 +16,23 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
         }
 
         [Test]
+        public async Task AutoAttachServicesDisabled_DoesNotAutoAttachServices()
+        {
+            var name = $"autoattach-disabled-{DateTime.Now:yyyyMMdd-HHmmss}";
+
+            var simpleTransport = _simpleTransportFactory.CreateTransport(
+                name,
+                TimeSpan.FromMinutes(1),
+                new Config.AmazonSimpleTransportOptions { AutoAttachServices = false, DisableAccessPolicyChecks = false });
+
+            // Verify that the services were not attached
+            var (snsTransport, _) = simpleTransport.GetInternalTransports();
+
+            var topicArn = await snsTransport.LookupArnForTopicName(name);
+            Assert.IsNull(topicArn);
+        }
+
+        [Test]
         public async Task AutoAttachServicesWithAccessPolicyChecksEnabled_CreatesSqsAccessPolicyAtInitialization()
         {
             var name = $"autoattach-pce-{DateTime.Now:yyyyMMdd-HHmmss}";
@@ -25,6 +42,19 @@ namespace Rebus.AmazonSQS.Tests.AmazonSNS
                 TimeSpan.FromMinutes(1),
                 new Config.AmazonSimpleTransportOptions { AutoAttachServices = true, DisableAccessPolicyChecks = false });
 
+            // Verify that the services were attached correctly (SNS -> SQS)
+            var (snsTransport, _) = simpleTransport.GetInternalTransports();
+
+            var topicArn = await snsTransport.LookupArnForTopicName(name);
+            Assert.NotNull(topicArn);
+
+            var subscriptions = await snsTransport.ListSnsSubscriptions(name);
+
+            Assert.AreEqual(1, subscriptions.Count);
+            Assert.True(subscriptions[0].TopicArn.StartsWith("arn:aws:sns") && subscriptions[0].TopicArn.EndsWith($":{name}"));
+            Assert.True(subscriptions[0].Endpoint.StartsWith("arn:aws:sqs") && subscriptions[0].Endpoint.EndsWith($":{name}"));
+
+            // Verify that the Access Policy was set property
             var snsHasAccessToSqs = await simpleTransport.CheckSqsAccessPolicy(name, name);
             Assert.True(snsHasAccessToSqs);
         }
